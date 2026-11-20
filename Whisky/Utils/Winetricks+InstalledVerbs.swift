@@ -20,7 +20,7 @@ import Foundation
 import os
 import WhiskyKit
 
-private let logger = Logger(subsystem: Bundle.whiskyBundleIdentifier, category: "Winetricks")
+private let logger = Logger(subsystem: Bundle.champagneBundleIdentifier, category: "Winetricks")
 
 // MARK: - Installed Verb Discovery
 
@@ -34,6 +34,10 @@ extension Winetricks {
     static func listInstalledVerbs(for bottle: Bottle) async -> Set<String>? {
         let bottleURL = await MainActor.run { bottle.url }
         logger.debug("Running winetricks list-installed for bottle at \(bottleURL.path)")
+        guard let binFolder = await MainActor.run(body: { try? Wine.wineBinFolder(for: bottle) }) else {
+            logger.error("Cannot inspect Winetricks verbs: the bottle's selected Wine runtime is not installed")
+            return nil
+        }
 
         guard let resourcesURL = Bundle.main.url(forResource: "cabextract", withExtension: nil)?
             .deletingLastPathComponent()
@@ -50,7 +54,7 @@ extension Winetricks {
             "WINEPREFIX": bottleURL.path(percentEncoded: false),
             "WINE": "wine64",
             "PATH": [
-                WhiskyWineInstaller.binFolder.path(percentEncoded: false),
+                binFolder.path(percentEncoded: false),
                 resourcesURL.path(percentEncoded: false),
                 "/usr/bin",
                 "/bin"

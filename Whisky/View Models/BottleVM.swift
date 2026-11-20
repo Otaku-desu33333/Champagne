@@ -74,7 +74,7 @@ func bottleLocationRefusal(_ result: BottleLocationValidation.ValidationResult) 
 }
 
 private let bottleVMLogger = Logger(
-    subsystem: Bundle.main.bundleIdentifier ?? "com.franke.Whisky",
+    subsystem: Bundle.main.bundleIdentifier ?? "com.ryanng.champagne",
     category: "BottleVM"
 )
 
@@ -106,9 +106,8 @@ final class BottleVM: ObservableObject {
 
     /// Runs the launcher migrations on every bottle, here so WhiskyCmd never rewrites settings.
     func migrateLauncherBackends() {
-        let d3dMetalInstalled = WhiskyWineInstaller.isD3DMetalInstalled()
         for bottle in bottles where bottle.isAvailable && !bottle.inFlight {
-            LauncherBackendMigration.migrateIfNeeded(bottle, d3dMetalInstalled: d3dMetalInstalled)
+            LauncherBackendMigration.migrateIfNeeded(bottle)
             LauncherLocaleMigration.migrateIfNeeded(bottle)
         }
     }
@@ -364,7 +363,7 @@ final class BottleVM: ObservableObject {
     ) {
         lines.append("[SYSTEM]")
         lines.append("macOS Version: \(MacOSVersion.current.description)")
-        lines.append("Whisky Version: \(whiskyVersionString)")
+        lines.append("Champagne Version: \(whiskyVersionString)")
         let whiskyWineInstalled = WhiskyWineInstaller.isWhiskyWineInstalled() ? "yes" : "no"
         lines.append("WhiskyWine Installed: \(whiskyWineInstalled)")
         if let whiskyWineVersion = WhiskyWineInstaller.whiskyWineVersion() {

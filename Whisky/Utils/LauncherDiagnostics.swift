@@ -56,14 +56,14 @@ enum LauncherDiagnostics {
     static func generateDiagnosticReport(for bottle: Bottle) async -> String {
         var report = """
         ═══════════════════════════════════════════════════════
-        Whisky Launcher Diagnostics Report
+        Champagne Launcher Diagnostics Report
         Generated: \(Date().formatted())
         ═══════════════════════════════════════════════════════
 
         """
 
         // System Information
-        report += await generateSystemInfo()
+        report += generateSystemInfo(for: bottle)
 
         // Bottle Configuration
         report += generateBottleConfig(for: bottle)
@@ -89,7 +89,7 @@ enum LauncherDiagnostics {
 
     /// Generates system information section.
     @MainActor
-    private static func generateSystemInfo() async -> String {
+    private static func generateSystemInfo(for bottle: Bottle) -> String {
         var info = """
 
         [SYSTEM INFORMATION]
@@ -99,11 +99,15 @@ enum LauncherDiagnostics {
         let version = MacOSVersion.current
         info += "macOS Version: \(version.description)\n"
 
-        // Wine version
-        if let wineVer = try? await Wine.wineVersion() {
-            info += "Wine Version: \(wineVer)\n"
+        // Report the runtime selected for this bottle rather than the global
+        // default runtime, which may not be the one that produced the failure.
+        let runtimeIdentifier = bottle.settings.wineRuntimeIdentifier ?? WineRuntimeStore.defaultRuntimeIdentifier
+        if let runtime = WineRuntimeStore.runtime(identifier: runtimeIdentifier) {
+            info += "Wine Runtime: \(runtime.identifier)\n"
+            info += "Wine Version: \(runtime.versionInfo.version)\n"
+            info += "GPTK Deployed: \(GPTKImporter.isDeployed(for: bottle) ? "yes" : "no")\n"
         } else {
-            info += "Wine Version: Unable to detect\n"
+            info += "Wine Runtime: \(runtimeIdentifier) (not installed)\n"
         }
 
         // Processor architecture (host hardware, independent of running slice)
@@ -312,7 +316,7 @@ enum LauncherDiagnostics {
     ///
     /// - Parameters:
     ///   - report: The diagnostic report string
-    ///   - filename: Optional filename (default: "whisky-diagnostics-<timestamp>.txt")
+    ///   - filename: Optional filename (default: "champagne-diagnostics-<timestamp>.txt")
     /// - Returns: URL to the exported file
     /// - Throws: Error if file cannot be written
     @discardableResult
@@ -324,7 +328,7 @@ enum LauncherDiagnostics {
 
         let timestamp = ISO8601DateFormatter().string(from: Date())
             .replacingOccurrences(of: ":", with: "-")
-        let finalFilename = filename ?? "whisky-diagnostics-\(timestamp).txt"
+        let finalFilename = filename ?? "champagne-diagnostics-\(timestamp).txt"
 
         let fileURL = documentsURL.appendingPathComponent(finalFilename)
         try report.write(to: fileURL, atomically: true, encoding: .utf8)

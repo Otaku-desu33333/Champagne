@@ -43,7 +43,7 @@ class ProcessesViewModel: ObservableObject {
     private let pollingInterval: TimeInterval = 3.0
 
     private let logger = Logger(
-        subsystem: Bundle.whiskyBundleIdentifier,
+        subsystem: Bundle.champagneBundleIdentifier,
         category: "ProcessesViewModel"
     )
 

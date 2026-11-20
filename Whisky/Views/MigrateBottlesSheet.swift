@@ -19,8 +19,8 @@
 import SwiftUI
 import WhiskyKit
 
-/// Lets the user import bottles created by the archived original Whisky app, which this
-/// fork doesn't see automatically because it uses a different bundle identifier. Bottles
+/// Lets the user import bottles created by either Whisky app. Champagne uses a different
+/// bundle identifier, so those bottle registries are not visible automatically. Bottles
 /// are referenced in place (not copied), so the import is non-destructive.
 struct MigrateBottlesSheet: View {
     @EnvironmentObject var bottleVM: BottleVM
@@ -59,12 +59,12 @@ struct MigrateBottlesSheet: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Import Bottles from the Original Whisky")
+            Text("Import Bottles from Whisky")
                 .font(.headline)
             Text(
                 """
-                These bottles were created by the archived original Whisky app. Importing references \
-                them in place: your files aren't moved or copied, and the original app keeps working.
+                These bottles are shared in place, so Champagne and Whisky use the same bottle folders. \
+                Wine runtimes and GPTK data stay with the source app and must be set up separately in Champagne.
                 """
             )
             .font(.subheadline)
@@ -81,7 +81,7 @@ struct MigrateBottlesSheet: View {
                 Image(systemName: "tray")
                     .font(.largeTitle)
                     .foregroundStyle(.secondary)
-                Text("No bottles from the original Whisky were found.")
+                Text("No unregistered bottles from Whisky were found.")
                     .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -91,6 +91,9 @@ struct MigrateBottlesSheet: View {
                     Toggle(isOn: $row.isSelected) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(row.bottle.name)
+                            Text(row.bottle.sourceName)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                             Text(row.bottle.url.path(percentEncoded: false))
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
@@ -128,9 +131,9 @@ struct MigrateBottlesSheet: View {
     private func loadIfNeeded() {
         guard !didLoad else { return }
         didLoad = true
-        rows = LegacyBottleImport
-            .importableBottles(existingPaths: bottleVM.bottlesList.paths)
-            .map { Row(bottle: $0, isSelected: true) }
+        rows = LegacyBottleImport.importableBottles(
+            existingPaths: bottleVM.bottlesList.paths
+        ).map { Row(bottle: $0, isSelected: true) }
     }
 
     private func importSelected() {

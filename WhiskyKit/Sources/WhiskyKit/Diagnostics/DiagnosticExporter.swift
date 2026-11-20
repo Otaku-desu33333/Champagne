@@ -177,10 +177,10 @@ public enum DiagnosticExporter {
         program: Program,
         options: ExportOptions
     ) -> String {
-        var markdown = "## Whisky Diagnostic Report\n\n"
+        var markdown = "## Champagne Diagnostic Report\n\n"
         markdown += "**Generated:** \(Date().formatted())\n\n"
 
-        markdown += generateSystemInfoSection()
+        markdown += generateSystemInfoSection(bottle: bottle)
         markdown += generateBottleConfigSection(bottle: bottle)
         markdown += generateDiagnosisSummarySection(diagnosis: diagnosis)
         markdown += generateMatchedPatternsSection(diagnosis: diagnosis)
@@ -191,7 +191,7 @@ public enum DiagnosticExporter {
     }
 
     @MainActor
-    private static func generateSystemInfoSection() -> String {
+    private static func generateSystemInfoSection(bottle: Bottle) -> String {
         var section = "### System Info\n\n"
         let version = MacOSVersion.current
         section += "- **macOS:** \(version.description)\n"
@@ -200,16 +200,22 @@ public enum DiagnosticExporter {
         } else {
             section += "- **Architecture:** Intel (x86_64)\n"
         }
-        if let whiskyWineVersion = WhiskyWineInstaller.whiskyWineVersion() {
-            section += "- **WhiskyWine:** \(whiskyWineVersion.major).\(whiskyWineVersion.minor)"
-            section += ".\(whiskyWineVersion.patch)\n"
+        let runtimeIdentifier = bottle.settings.wineRuntimeIdentifier ?? WineRuntimeStore.defaultRuntimeIdentifier
+        if let runtime = WineRuntimeStore.runtime(identifier: runtimeIdentifier) {
+            section += "- **Wine runtime:** \(runtime.identifier)\n"
+            section += "- **Wine version:** \(runtime.versionInfo.version)\n"
+        } else {
+            section += "- **Wine runtime:** \(runtimeIdentifier) (not installed)\n"
         }
-        if let dxvkVersion = WhiskyWineInstaller.whiskyWineDXVKVersion() {
+        if let runtime = WineRuntimeStore.runtime(identifier: runtimeIdentifier),
+           let dxvkVersion = runtime.versionInfo.dxvkVersion {
             section += "- **DXVK:** \(dxvkVersion)\n"
         }
-        if let dxmtVersion = WhiskyWineInstaller.whiskyWineDXMTVersion() {
+        if let runtime = WineRuntimeStore.runtime(identifier: runtimeIdentifier),
+           let dxmtVersion = runtime.versionInfo.dxmtVersion {
             section += "- **DXMT:** \(dxmtVersion)\n"
         }
+        section += "- **GPTK payload deployed:** \(GPTKImporter.isDeployed(for: bottle) ? "Yes" : "No")\n"
         section += "\n"
         return section
     }
@@ -218,6 +224,7 @@ public enum DiagnosticExporter {
     private static func generateBottleConfigSection(bottle: Bottle) -> String {
         var section = "### Bottle Config\n\n"
         section += "- **Bottle:** \(bottle.settings.name)\n"
+        section += "- **Wine Runtime:** \(bottle.settings.wineRuntimeIdentifier ?? WineRuntimeStore.defaultRuntimeIdentifier)\n"
         section += "- **Windows Version:** \(bottle.settings.windowsVersion)\n"
         section += "- **Graphics Backend:** \(bottle.settings.graphicsBackend)\n"
         section += "- **DXVK Async:** \(bottle.settings.dxvkAsync ? "Enabled" : "Disabled")\n"
@@ -295,6 +302,12 @@ public enum DiagnosticExporter {
     static func bottleSettingsSummary(bottle: Bottle) -> String {
         var info: [String: String] = [:]
         info["name"] = bottle.settings.name
+        let runtimeIdentifier = bottle.settings.wineRuntimeIdentifier ?? WineRuntimeStore.defaultRuntimeIdentifier
+        info["wineRuntimeIdentifier"] = runtimeIdentifier
+        if let runtime = WineRuntimeStore.runtime(identifier: runtimeIdentifier) {
+            info["wineRuntimeVersion"] = "\(runtime.versionInfo.version)"
+            info["gptkPayloadDeployed"] = "\(GPTKImporter.isDeployed(for: bottle))"
+        }
         info["windowsVersion"] = "\(bottle.settings.windowsVersion)"
         info["graphicsBackend"] = "\(bottle.settings.graphicsBackend)"
         info["dxvkAsync"] = "\(bottle.settings.dxvkAsync)"
@@ -338,15 +351,17 @@ public enum DiagnosticExporter {
     }
 
     /// Generates a JSON string with system information.
-    static func generateSystemInfoJSON() async -> String {
+    @MainActor
+    static func generateSystemInfoJSON(bottle: Bottle) async -> String {
         var info: [String: String] = [:]
         let version = MacOSVersion.current
         info["macOS"] = version.description
         info["architecture"] = HostArchitecture.isAppleSilicon ? "arm64" : "x86_64"
 
-        if let whiskyWineVersion = WhiskyWineInstaller.whiskyWineVersion() {
-            info["whiskyWineVersion"] =
-                "\(whiskyWineVersion.major).\(whiskyWineVersion.minor).\(whiskyWineVersion.patch)"
+        let runtimeIdentifier = bottle.settings.wineRuntimeIdentifier ?? WineRuntimeStore.defaultRuntimeIdentifier
+        info["wineRuntimeIdentifier"] = runtimeIdentifier
+        if let runtime = WineRuntimeStore.runtime(identifier: runtimeIdentifier) {
+            info["wineRuntimeVersion"] = "\(runtime.versionInfo.version)"
         }
 
         return dictionaryToJSON(info)
@@ -363,12 +378,12 @@ extension DiagnosticExporter {
         let bottleName = sanitizeName(context.bottle.settings.name)
         let programName = sanitizeName(context.program.name)
         let dateString = formatDateForFilename(Date())
-        let zipFilename = "Whisky-Diagnostics-\(bottleName)-\(programName)-\(dateString).zip"
+        let zipFilename = "Champagne-Diagnostics-\(bottleName)-\(programName)-\(dateString).zip"
 
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let contentDir = tempDir.appendingPathComponent(
-            "Whisky-Diagnostics-\(bottleName)-\(programName)",
+            "Champagne-Diagnostics-\(bottleName)-\(programName)",
             isDirectory: true
         )
         let zipURL = tempDir.appendingPathComponent(zipFilename)
@@ -391,7 +406,8 @@ extension DiagnosticExporter {
 
     @MainActor
     fileprivate static func prepareZIPContent(context: ZIPExportContext) async -> ZIPContent {
-        await ZIPContent(
+        let systemInfo = await generateSystemInfoJSON(bottle: context.bottle)
+        return ZIPContent(
             reportMarkdown: generateReportMarkdown(
                 diagnosis: context.diagnosis,
                 bottle: context.bottle,
@@ -400,7 +416,7 @@ extension DiagnosticExporter {
             ),
             bottleSummary: bottleSettingsSummary(bottle: context.bottle),
             programSummary: programSettingsSummary(program: context.program, options: context.options),
-            systemInfo: generateSystemInfoJSON(),
+            systemInfo: systemInfo,
             environmentJSON: generateEnvironmentJSON(bottle: context.bottle, options: context.options)
         )
     }

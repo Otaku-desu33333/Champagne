@@ -120,13 +120,14 @@ public enum LauncherFixes {
     ///   - launcher: The detected or manually selected launcher type
     ///   - force: If `true`, overrides existing settings; if `false`, only applies if not already configured
     ///   - recommendedBackend: What `.recommended` resolves to for the bottle's
-    ///     games. Defaults to the resolver's answer for the installed runtime.
+    ///     games. Defaults to the resolver's answer for the bottle's runtime.
     @MainActor
     // swiftlint:disable:next cyclomatic_complexity
     public static func apply(
         to bottle: Bottle, launcher: LauncherType, force: Bool = false,
-        recommendedBackend: GraphicsBackend = GraphicsBackendResolver.resolve()
+        recommendedBackend: GraphicsBackend? = nil
     ) {
+        let effectiveRecommendedBackend = recommendedBackend ?? GraphicsBackendResolver.resolve(for: bottle.settings)
         // Enable launcher compatibility mode
         if !bottle.settings.launcherCompatibilityMode || force {
             bottle.settings.launcherCompatibilityMode = true
@@ -141,7 +142,7 @@ public enum LauncherFixes {
         // whenever the fixes were applied again (#330, LauncherLocaleMigration).
         switch launcher {
         case .steam:
-            applySteamBackend(to: bottle, force: force, recommendedBackend: recommendedBackend)
+            applySteamBackend(to: bottle, force: force, recommendedBackend: effectiveRecommendedBackend)
 
             // GPU spoofing helps with game compatibility checks
             bottle.settings.gpuSpoofing = true

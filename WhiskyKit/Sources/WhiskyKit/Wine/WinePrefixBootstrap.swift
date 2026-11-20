@@ -20,7 +20,7 @@ import Foundation
 import os.log
 import SemanticVersion
 
-private let logger = Logger(subsystem: Bundle.whiskyBundleIdentifier, category: "WinePrefixBootstrap")
+private let logger = Logger(subsystem: Bundle.champagneBundleIdentifier, category: "WinePrefixBootstrap")
 
 /// Errors thrown when a bottle's Wine prefix cannot be set up before a launch.
 public enum WinePrefixBootstrapError: LocalizedError, Equatable {

@@ -22,7 +22,7 @@ import SwiftUI
 import WhiskyKit
 
 private let launcherConfigLogger = Logger(
-    subsystem: Bundle.main.bundleIdentifier ?? "com.franke.Whisky",
+    subsystem: Bundle.main.bundleIdentifier ?? "com.ryanng.champagne",
     category: "LauncherConfig"
 )
 
@@ -40,7 +40,7 @@ struct LauncherConfigSection: View {
                 Toggle("Launcher Compatibility Mode", isOn: $bottle.settings.launcherCompatibilityMode)
                     .help("""
                     Enables automatic fixes for Steam, Rockstar, EA App, Epic Games, \
-                    and other game launchers (frankea/Whisky#41)
+                    and other game launchers
                     """)
 
                 if bottle.settings.launcherCompatibilityMode {

@@ -18,6 +18,7 @@
 
 import os
 import SwiftUI
+import UniformTypeIdentifiers
 import WhiskyKit
 
 enum RetinaModeState: Equatable {
@@ -25,7 +26,7 @@ enum RetinaModeState: Equatable {
 }
 
 struct WineConfigSection: View {
-    private static let logger = Logger(subsystem: Bundle.whiskyBundleIdentifier, category: "ConfigView")
+    private static let logger = Logger(subsystem: Bundle.champagneBundleIdentifier, category: "ConfigView")
     @ObservedObject var bottle: Bottle
     @Binding var isExpanded: Bool
     @Binding var buildVersion: String
@@ -36,12 +37,21 @@ struct WineConfigSection: View {
     @Binding var retinaModeLoadingState: LoadingState
     @Binding var dpiConfigLoadingState: LoadingState
     @Binding var dpiSheetPresented: Bool
+    @State var availableWineRuntimes: [InstalledWineRuntime] = []
+    @State var importingWineRuntime = false
+    @State var selectingWineRuntime = false
+    @State var deployingGPTKToRuntime = false
+    @State var showingWineRuntimeImporter = false
+    @State var showingWineRuntimeCatalog = false
+    @State var wineRuntimeError: String?
+    @State var wineRuntimeNotice: String?
     var onRetryBuildVersion: (() -> Void)?
     var onRetryRetinaMode: (() -> Void)?
     var onRetryDpi: (() -> Void)?
 
     var body: some View {
         Section("config.title.wine", isExpanded: $isExpanded) {
+            wineRuntimeControls
             SettingItemView(
                 title: "config.winVersion",
                 description: "config.winVersion.info",
@@ -164,6 +174,37 @@ struct WineConfigSection: View {
                         }
                     }
                 }
+            }
+        }
+        .task {
+            refreshWineRuntimes()
+        }
+        .fileImporter(
+            isPresented: $showingWineRuntimeImporter,
+            allowedContentTypes: [.archive, .gzip]
+        ) { result in
+            guard case let .success(url) = result else { return }
+            installWineRuntime(from: url)
+        }
+        .alert(
+            "runtime.selection.title",
+            isPresented: Binding(
+                get: { wineRuntimeError != nil },
+                set: { if !$0 { wineRuntimeError = nil } }
+            )
+        ) {
+            Button("button.ok", role: .cancel) {}
+        } message: {
+            Text(wineRuntimeError ?? "")
+        }
+        .sheet(isPresented: $showingWineRuntimeCatalog) {
+            WineRuntimeCatalogSheet { release, identifier in
+                refreshWineRuntimes()
+                wineRuntimeNotice = String.localizedStringWithFormat(
+                    String(localized: "runtime.catalog.installedNotice"),
+                    identifier,
+                    release.tagName
+                )
             }
         }
     }

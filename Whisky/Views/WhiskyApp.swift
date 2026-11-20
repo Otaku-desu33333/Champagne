@@ -22,7 +22,7 @@ import Sparkle
 import SwiftUI
 import WhiskyKit
 
-private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "com.franke.Whisky", category: "WhiskyApp")
+private let logger = Logger(subsystem: Bundle.champagneBundleIdentifier, category: "ChampagneApp")
 
 @main
 // swiftlint:disable:next type_body_length
@@ -40,7 +40,7 @@ struct WhiskyApp: App {
     /// Opt-in: show a menu-bar extra and keep Whisky running after the main
     /// window closes (see `AppDelegate.applicationShouldTerminateAfterLastWindowClosed`).
     @AppStorage("showMenuBarExtra") private var showMenuBarExtra = false
-    /// Set once the original-Whisky import has been offered automatically, so
+    /// Set once the Whisky import has been offered automatically, so
     /// it is never offered again (it stays available from the File menu).
     @AppStorage("hasOfferedLegacyMigration") private var hasOfferedLegacyMigration = false
     @State var showSetup: Bool = false
@@ -81,22 +81,53 @@ struct WhiskyApp: App {
     ///   an install set up before they existed never deploys again, so without
     ///   this they would stay missing until it happened to reimport. Each step
     ///   is idempotent and a no-op on runtimes it does not apply to.
+    /// - A runtime with a live wineserver is skipped; repair changes shared
+    ///   files that a running process may already have loaded.
     private func updateGPTKPayloadIfNeeded() {
         var data = BottleData()
-        let bottles = data.loadBottles().map(\.url)
-        Task.detached(priority: .background) {
-            GPTKImporter.verifyStoredPayload()
-            GPTKImporter.ensureMetalFXBridgeInstalled()
-            GPTKImporter.ensureNVAPIBridgeInstalled()
-            GPTKImporter.ensureVideoProcessorInstalled(bottles: bottles)
+        let bottles = data.loadBottles()
+        let bottlesByRuntime = Dictionary(
+            grouping: bottles,
+            by: { $0.settings.wineRuntimeIdentifier ?? WineRuntimeStore.defaultRuntimeIdentifier }
+        ).mapValues { $0.map(\.url) }
+        let namedRuntimeIdentifiers = WineRuntimeStore.installedRuntimes()
+            .map(\.identifier)
+            .filter { $0 != WineRuntimeStore.defaultRuntimeIdentifier }
+        Task { @MainActor in
+            var activeRuntimeIdentifiers = Set<String>()
+            for bottle in bottles {
+                let identifier = bottle.settings.wineRuntimeIdentifier ?? WineRuntimeStore.defaultRuntimeIdentifier
+                if await Wine.isWineserverRunning(for: bottle) {
+                    activeRuntimeIdentifiers.insert(identifier)
+                }
+            }
+
+            Task.detached(priority: .background) {
+                GPTKImporter.verifyStoredPayload()
+                let defaultIdentifier = WineRuntimeStore.defaultRuntimeIdentifier
+                if !activeRuntimeIdentifiers.contains(defaultIdentifier) {
+                    GPTKImporter.ensureMetalFXBridgeInstalled()
+                    GPTKImporter.ensureNVAPIBridgeInstalled()
+                    GPTKImporter.ensureVideoProcessorInstalled(
+                        bottles: bottlesByRuntime[defaultIdentifier] ?? []
+                    )
+                }
+                for identifier in namedRuntimeIdentifiers where !activeRuntimeIdentifiers.contains(identifier) {
+                    GPTKImporter.ensureMetalFXBridgeInstalled(forRuntime: identifier)
+                    GPTKImporter.ensureNVAPIBridgeInstalled(forRuntime: identifier)
+                    GPTKImporter.ensureVideoProcessorInstalled(
+                        bottles: bottlesByRuntime[identifier] ?? [],
+                        forRuntime: identifier
+                    )
+                }
+            }
         }
     }
 
-    /// Offers the original-Whisky import once, when the archived app left
-    /// bottles this fork hasn't registered yet. Most people installing the fork
-    /// are coming from the original app, and the import is otherwise only
-    /// reachable from the File menu, so a first launch would create a fresh
-    /// bottle without ever mentioning the old ones.
+    /// Offers the Whisky import once when a previous installation has bottles
+    /// Champagne hasn't registered yet. The import is otherwise only reachable
+    /// from the File menu, so a first launch could create a fresh bottle without
+    /// surfacing the user's existing bottles.
     ///
     /// Called when the main window appears and when setup closes, so the sheet
     /// never competes with the first-launch setup sheet for presentation.
@@ -228,7 +259,7 @@ struct WhiskyApp: App {
                     }
                 }
                 .keyboardShortcut("I", modifiers: [.command])
-                Button("Migrate from the Original Whisky…") {
+                Button("Import Bottles from Whisky…") {
                     showMigrate = true
                 }
             }
@@ -248,12 +279,12 @@ struct WhiskyApp: App {
             }
             CommandGroup(replacing: .help) {
                 Button("help.github") {
-                    if let url = URL(string: "https://github.com/frankea/Whisky") {
+                    if let url = URL(string: "https://github.com/Otaku-desu33333/Champagne") {
                         openURL(url)
                     }
                 }
                 Button("help.issues") {
-                    if let url = URL(string: "https://github.com/frankea/Whisky/issues") {
+                    if let url = URL(string: "https://github.com/Otaku-desu33333/Champagne/issues") {
                         openURL(url)
                     }
                 }
@@ -271,7 +302,7 @@ struct WhiskyApp: App {
         Settings {
             SettingsView()
         }
-        MenuBarExtra("Whisky", systemImage: "wineglass", isInserted: $showMenuBarExtra) {
+        MenuBarExtra("Champagne", systemImage: "wineglass", isInserted: $showMenuBarExtra) {
             WhiskyMenuBarView()
                 .environmentObject(BottleVM.shared)
         }

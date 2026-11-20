@@ -108,13 +108,7 @@ struct BottleView: View {
             }
             .disabled(!bottle.isAvailable)
             .navigationTitle(bottle.settings.name)
-            .navigationSubtitle(
-                bottle.settings.graphicsBackend == .recommended
-                    ? String(
-                        localized: "bottle.subtitle.autoBackend \(GraphicsBackendResolver.resolve().displayName)"
-                    )
-                    : ""
-            )
+            .navigationSubtitle(automaticBackendSubtitle)
             .accessibilityIdentifier("bottleDetail")
             .toast($toast)
             .toolbar {
@@ -198,6 +192,12 @@ struct BottleView: View {
 }
 
 extension BottleView {
+    private var automaticBackendSubtitle: String {
+        guard bottle.settings.graphicsBackend == .recommended else { return "" }
+        let backend = GraphicsBackendResolver.resolve(for: bottle.settings)
+        return String(localized: "bottle.subtitle.autoBackend \(backend.displayName)")
+    }
+
     private func updateStartMenu() async {
         await bottle.updateInstalledPrograms()
 

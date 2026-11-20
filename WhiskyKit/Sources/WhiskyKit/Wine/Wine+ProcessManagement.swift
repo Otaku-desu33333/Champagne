@@ -20,7 +20,7 @@ import Foundation
 import os.log
 
 private let processLogger = Logger(
-    subsystem: Bundle.whiskyBundleIdentifier,
+    subsystem: Bundle.champagneBundleIdentifier,
     category: "Wine.ProcessManagement"
 )
 
@@ -41,9 +41,11 @@ public extension Wine {
         // only needs WINEPREFIX, while the full path builds the entire launch
         // environment and creates + retention-scans a log file per call — the
         // sidebar repeats this probe every 60 seconds for every visible bottle.
+        guard let runtime = try? Wine.runtime(for: bottle) else { return false }
         let running: Bool = await withCheckedContinuation { continuation in
             let process = Process()
-            process.executableURL = WhiskyWineInstaller.binFolder.appending(path: "wineserver")
+            process.executableURL = runtime.libraryFolder
+                .appending(path: "Wine").appending(path: "bin").appending(path: "wineserver")
             process.arguments = ["-k0"]
             process.environment = ["WINEPREFIX": bottle.url.path]
             process.standardOutput = FileHandle.nullDevice

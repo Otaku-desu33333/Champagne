@@ -25,6 +25,21 @@ import os.log
 /// The resolver centralises the heuristic so that future improvements (e.g., preferring
 /// DXVK on specific GPU families) can be made without changing the data model or UI.
 public enum GraphicsBackendResolver {
+    /// Resolves Recommended using the Wine runtime selected by a bottle.
+    public static func resolve(for settings: BottleSettings) -> GraphicsBackend {
+        let identifier = settings.wineRuntimeIdentifier ?? WineRuntimeStore.defaultRuntimeIdentifier
+        guard let runtime = WineRuntimeStore.runtime(identifier: identifier) else {
+            return identifier == WineRuntimeStore.defaultRuntimeIdentifier ? resolve() : .dxvk
+        }
+        return resolve(
+            runtimeInfo: runtime.versionInfo,
+            d3dMetalInstalled: WhiskyWineInstaller.isD3DMetalPresent(inLibraryFolder: runtime.libraryFolder),
+            dxmtRuntimeNative: Wine.isDXMTRuntimeNative(
+                payloadRoot: runtime.libraryFolder.appending(path: "DXMT")
+            )
+        )
+    }
+
     /// Resolves the recommended graphics backend for the current system.
     ///
     /// D3DMetal is the best-supported path on macOS 15+ Apple Silicon, but only

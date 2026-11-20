@@ -20,7 +20,7 @@ import Foundation
 import os
 import WhiskyKit
 
-private let logger = Logger(subsystem: Bundle.whiskyBundleIdentifier, category: "WinetricksInstall")
+private let logger = Logger(subsystem: Bundle.champagneBundleIdentifier, category: "WinetricksInstall")
 
 /// Progress events emitted during a headless winetricks verb installation.
 enum WinetricksInstallProgress {
@@ -37,6 +37,13 @@ enum WinetricksInstallProgress {
 // MARK: - Headless Verb Installation
 
 extension Winetricks {
+    private struct InstallOutputPipes {
+        let bottleURL: URL
+        let stdout: Pipe
+        let stderr: Pipe
+        let continuation: AsyncStream<WinetricksInstallProgress>.Continuation
+    }
+
     /// Installs a single winetricks verb headlessly via Process.
     ///
     /// Runs the verb installation as a child process (not via Terminal AppleScript),
@@ -111,6 +118,7 @@ extension Winetricks {
     private static func configureInstallProcess(
         verb: String,
         bottleURL: URL,
+        binFolder: URL,
         resourcesURL: URL
     ) -> Process {
         let process = Process()
@@ -127,7 +135,7 @@ extension Winetricks {
             "WINEPREFIX": bottleURL.path(percentEncoded: false),
             "WINE": "wine64",
             "PATH": [
-                WhiskyWineInstaller.binFolder.path(percentEncoded: false),
+                binFolder.path(percentEncoded: false),
                 resourcesURL.path(percentEncoded: false),
                 "/usr/bin",
                 "/bin"
@@ -166,6 +174,11 @@ extension Winetricks {
         continuation.yield(.preparing)
 
         let bottleURL = await MainActor.run { bottle.url }
+        guard let binFolder = await MainActor.run(body: { try? Wine.wineBinFolder(for: bottle) }) else {
+            continuation.yield(.failed("The bottle's selected Wine runtime is not installed."))
+            continuation.finish()
+            return
+        }
 
         guard let resourcesURL = Bundle.main.url(
             forResource: "cabextract",
@@ -178,12 +191,20 @@ extension Winetricks {
             return
         }
 
-        let process = configureInstallProcess(verb: verb, bottleURL: bottleURL, resourcesURL: resourcesURL)
+        let process = configureInstallProcess(
+            verb: verb, bottleURL: bottleURL, binFolder: binFolder, resourcesURL: resourcesURL
+        )
         let stdoutPipe = Pipe()
         let stderrPipe = Pipe()
-        process.standardOutput = stdoutPipe
-        process.standardError = stderrPipe
-        attachOutputHandlers(stdout: stdoutPipe, stderr: stderrPipe, continuation: continuation)
+        let outputPipes = InstallOutputPipes(
+            bottleURL: bottleURL,
+            stdout: stdoutPipe,
+            stderr: stderrPipe,
+            continuation: continuation
+        )
+        process.standardOutput = outputPipes.stdout
+        process.standardError = outputPipes.stderr
+        attachOutputHandlers(stdout: outputPipes.stdout, stderr: outputPipes.stderr, continuation: continuation)
 
         do {
             try process.run()
@@ -194,9 +215,25 @@ extension Winetricks {
             continuation.finish()
             return
         }
+        await finishVerbInstall(
+            process,
+            verb: verb,
+            timeout: timeout,
+            bottle: bottle,
+            outputPipes: outputPipes
+        )
+    }
+
+    private static func finishVerbInstall(
+        _ process: Process,
+        verb: String,
+        timeout: TimeInterval,
+        bottle: Bottle,
+        outputPipes: InstallOutputPipes
+    ) async {
         // The install runs Wine in the bottle; its wineserver is Whisky's doing, not an orphan.
-        WineHelperActivity.shared.begin(bottleURL: bottleURL)
-        defer { WineHelperActivity.shared.end(bottleURL: bottleURL) }
+        WineHelperActivity.shared.begin(bottleURL: outputPipes.bottleURL)
+        defer { WineHelperActivity.shared.end(bottleURL: outputPipes.bottleURL) }
 
         await withTaskCancellationHandler {
             await awaitProcessCompletion(process, verb: verb, timeout: timeout)
@@ -206,16 +243,14 @@ extension Winetricks {
                 process.terminate()
             }
         }
-        stdoutPipe.fileHandleForReading.readabilityHandler = nil
-        stderrPipe.fileHandleForReading.readabilityHandler = nil
+        outputPipes.stdout.fileHandleForReading.readabilityHandler = nil
+        outputPipes.stderr.fileHandleForReading.readabilityHandler = nil
 
         let exitCode = process.terminationStatus
         logger.info("winetricks install '\(verb)' exited with status \(exitCode)")
-        continuation.yield(.completed(exitCode: exitCode))
-
-        // Refresh the verb cache after installation
+        outputPipes.continuation.yield(.completed(exitCode: exitCode))
         _ = await Winetricks.loadInstalledVerbs(for: bottle)
-        continuation.finish()
+        outputPipes.continuation.finish()
     }
 
     /// Waits for the process to exit or times out.

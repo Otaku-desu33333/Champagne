@@ -19,7 +19,7 @@
 import Foundation
 import os.log
 
-private let logger = Logger(subsystem: Bundle.whiskyBundleIdentifier, category: "WinePrefixValidation")
+private let logger = Logger(subsystem: Bundle.champagneBundleIdentifier, category: "WinePrefixValidation")
 
 /// Provides validation utilities for Wine prefix health.
 ///

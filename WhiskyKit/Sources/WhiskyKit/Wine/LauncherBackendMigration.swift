@@ -67,7 +67,7 @@ public enum LauncherBackendMigration {
     @MainActor
     @discardableResult
     public static func migrateIfNeeded(
-        _ bottle: Bottle, d3dMetalInstalled: Bool = WhiskyWineInstaller.isD3DMetalInstalled()
+        _ bottle: Bottle, d3dMetalInstalled: Bool? = nil
     ) -> Bool {
         var settings = bottle.settings
         var changed = false
@@ -79,7 +79,9 @@ public enum LauncherBackendMigration {
             changed = true
         }
 
-        let reset = d3dMetalInstalled && isRestorable(settings)
+        let runtimeSupportsD3DMetal = d3dMetalInstalled
+            ?? WhiskyWineInstaller.isBackendAvailable(.d3dMetal, for: settings)
+        let reset = runtimeSupportsD3DMetal && isRestorable(settings)
         if reset {
             restore(&settings)
             Logger.wineKit.info(

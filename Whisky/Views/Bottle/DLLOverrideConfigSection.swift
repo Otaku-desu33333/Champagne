@@ -37,6 +37,7 @@ struct DLLOverrideConfigSection: View {
     var body: some View {
         Section("config.title.dllOverrides", isExpanded: $isExpanded) {
             DLLOverrideEditor(
+                bottle: bottle,
                 managedOverrides: computedManagedOverrides.map { (entry: $0.entry, source: $0.label) },
                 customOverrides: $bottle.settings.dllOverrides,
                 warnings: computedWarnings
@@ -49,13 +50,13 @@ struct DLLOverrideConfigSection: View {
         var managed: [ManagedOverride] = []
         // Read once for both presets, as the launch path does: whether DXVK and
         // DXMT turn d3d12 off depends on what the runtime's builtin d3d12 is.
-        let builtinD3D12IsD3DMetal = GPTKImporter.isDeployed()
+        let builtinD3D12IsD3DMetal = GPTKImporter.isDeployed(for: bottle)
 
         // The backend, not the legacy `dxvk` flag: the launch path only honours
         // that flag when no backend is set, so reading it here listed
         // overrides that were not the ones being applied.
         let backend = bottle.settings.graphicsBackend == .recommended
-            ? GraphicsBackendResolver.resolve()
+            ? GraphicsBackendResolver.resolve(for: bottle.settings)
             : bottle.settings.graphicsBackend
         let preset = DLLOverrideResolver.managedPreset(
             for: backend, builtinD3D12IsD3DMetal: builtinD3D12IsD3DMetal

@@ -25,9 +25,9 @@ extension WineConfigSection {
     var wineRuntimeControls: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text("Wine runtime")
+                Text("runtime.selection.title")
                 Spacer()
-                Picker("Wine runtime", selection: runtimeSelection) {
+                Picker("runtime.selection.title", selection: runtimeSelection) {
                     ForEach(availableWineRuntimes) { runtime in
                         Text(runtimeLabel(runtime)).tag(runtime.identifier)
                     }
@@ -40,19 +40,23 @@ extension WineConfigSection {
             if let selected = availableWineRuntimes.first(where: { $0.identifier == selectedRuntimeIdentifier }) {
                 let version = selected.versionInfo.version
                 let capability = selected.versionInfo.gptkCapable == true
-                    ? String(localized: "GPTK capable")
-                    : String(localized: "Wine runtime")
-                Text("Wine \(version.major).\(version.minor).\(version.patch) · \(capability)")
+                    ? String(localized: "runtime.selection.gptkCapable")
+                    : String(localized: "runtime.selection.gptkUnavailable")
+                Text(String.localizedStringWithFormat(
+                    String(localized: "runtime.selection.version"),
+                    "\(version.major).\(version.minor).\(version.patch)",
+                    capability
+                ))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
-                Text("The selected runtime is missing. Import it again or choose another installed runtime.")
+                Text("runtime.selection.missing")
                     .font(.caption)
                     .foregroundStyle(.orange)
             }
 
             HStack(spacing: 8) {
-                Button("Import Wine .tar.gz…") {
+                Button("runtime.selection.importArchive") {
                     showingWineRuntimeImporter = true
                 }
                 .disabled(importingWineRuntime)
@@ -72,7 +76,7 @@ extension WineConfigSection {
                selected.versionInfo.gptkCapable == true,
                GPTKImporter.storedRecord() != nil,
                !GPTKImporter.isDeployed(for: bottle) {
-                Button("Deploy imported GPTK to this runtime") {
+                Button("runtime.selection.deployGPTK") {
                     deployGPTKToSelectedRuntime()
                 }
                 .disabled(importingWineRuntime || deployingGPTKToRuntime || selectingWineRuntime)
@@ -100,9 +104,13 @@ extension WineConfigSection {
     private func runtimeLabel(_ runtime: InstalledWineRuntime) -> String {
         let version = runtime.versionInfo.version
         let name = runtime.identifier == WineRuntimeStore.defaultRuntimeIdentifier
-            ? String(localized: "Default")
+            ? String(localized: "runtime.selection.default")
             : runtime.identifier
-        return String(localized: "\(name) · Wine \(version.major).\(version.minor).\(version.patch)")
+        return String.localizedStringWithFormat(
+            String(localized: "runtime.selection.pickerLabel"),
+            name,
+            "\(version.major).\(version.minor).\(version.patch)"
+        )
     }
 
     func refreshWineRuntimes() {
@@ -115,13 +123,16 @@ extension WineConfigSection {
         Task { @MainActor in
             defer { selectingWineRuntime = false }
             guard await !(Wine.isWineserverRunning(for: bottle)) else {
-                wineRuntimeError = "Close this bottle’s running programs before changing its Wine runtime."
+                wineRuntimeError = String(localized: "runtime.selection.closeBottleBeforeChange")
                 return
             }
             do {
                 try WineRuntimeStore.select(identifier, for: bottle)
                 let version = bottle.settings.wineVersion
-                wineRuntimeNotice = "Runtime changed. The bottle will use Wine \(version) on its next launch."
+                wineRuntimeNotice = String.localizedStringWithFormat(
+                    String(localized: "runtime.selection.changedNotice"),
+                    version.description
+                )
             } catch {
                 wineRuntimeError = error.localizedDescription
             }
@@ -145,7 +156,10 @@ extension WineConfigSection {
                     return try WineRuntimeStore.install(tarball: url, identifier: identifier).identifier
                 }.value
                 refreshWineRuntimes()
-                wineRuntimeNotice = "Imported runtime ‘\(identifier)’. Choose it above to assign it to this bottle."
+                wineRuntimeNotice = String.localizedStringWithFormat(
+                    String(localized: "runtime.selection.importedNotice"),
+                    identifier
+                )
             } catch {
                 wineRuntimeError = error.localizedDescription
             }
@@ -159,14 +173,17 @@ extension WineConfigSection {
         Task { @MainActor in
             defer { deployingGPTKToRuntime = false }
             guard await !anyBottleUsingRuntimeIsRunning(identifier) else {
-                wineRuntimeError = "Close all Champagne bottles using this runtime before deploying GPTK."
+                wineRuntimeError = String(localized: "runtime.selection.closeAllBottlesBeforeDeploy")
                 return
             }
             do {
                 try await Task.detached(priority: .utility) {
                     try GPTKImporter.deployStoredPayload(forRuntime: identifier)
                 }.value
-                wineRuntimeNotice = "GPTK was deployed to ‘\(identifier)’."
+                wineRuntimeNotice = String.localizedStringWithFormat(
+                    String(localized: "runtime.selection.deploySuccess"),
+                    identifier
+                )
             } catch {
                 wineRuntimeError = error.localizedDescription
             }

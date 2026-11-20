@@ -116,7 +116,7 @@ public enum GameConfigApplicator {
     ///   - programURL: The program the configuration is applied from, if any. It
     ///     receives the environment variables.
     ///   - isBackendAvailable: Whether this machine can run a backend; see
-    ///     ``effectiveBackend(_:isBackendAvailable:)``. Defaults to the installed runtime.
+    ///     ``effectiveBackend(_:isBackendAvailable:)``. Defaults to the bottle's runtime.
     /// - Returns: The snapshot created before applying changes.
     /// - Throws: An error if the snapshot cannot be encoded or saved.
     @MainActor
@@ -125,8 +125,10 @@ public enum GameConfigApplicator {
         variant: GameConfigVariant,
         to bottle: Bottle,
         programURL: URL? = nil,
-        isBackendAvailable: (GraphicsBackend) -> Bool = WhiskyWineInstaller.isBackendAvailable
+        isBackendAvailable: ((GraphicsBackend) -> Bool)? = nil
     ) throws -> GameConfigSnapshot {
+        let isBackendAvailable = isBackendAvailable
+            ?? { WhiskyWineInstaller.isBackendAvailable($0, for: bottle.settings) }
         // 1. Snapshot current state
         let encoder = PropertyListEncoder()
         encoder.outputFormat = .xml
@@ -239,7 +241,7 @@ public enum GameConfigApplicator {
     ///     left out of the verbs to install.
     ///   - isBackendAvailable: Whether this machine can run a backend, so the
     ///     preview shows the backend ``apply(entry:variant:to:programURL:isBackendAvailable:)``
-    ///     will actually set. Defaults to the installed runtime.
+    ///     will actually set. Defaults to the bottle's runtime.
     /// - Returns: An array of changes, with high-impact changes flagged.
     @MainActor
     public static func previewChanges(
@@ -248,8 +250,10 @@ public enum GameConfigApplicator {
         entry: GameDBEntry? = nil,
         programURL: URL? = nil,
         installedVerbs: Set<String> = [],
-        isBackendAvailable: (GraphicsBackend) -> Bool = WhiskyWineInstaller.isBackendAvailable
+        isBackendAvailable: ((GraphicsBackend) -> Bool)? = nil
     ) -> [ConfigChange] {
+        let isBackendAvailable = isBackendAvailable
+            ?? { WhiskyWineInstaller.isBackendAvailable($0, for: bottle.settings) }
         var changes: [ConfigChange] = []
         let settings = variant.settings
         let graphics = String(localized: "gameConfig.detail.graphics")

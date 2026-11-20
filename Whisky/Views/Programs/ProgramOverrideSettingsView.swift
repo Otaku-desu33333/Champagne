@@ -301,7 +301,7 @@ struct ProgramOverrideSettingsView: View {
                     // the picker can still display the current selection.
                     let current = program.settings.overrides?.graphicsBackend
                     let offered = GraphicsBackend.allCases.filter { backend in
-                        WhiskyWineInstaller.isBackendAvailable(backend) || backend == current
+                        WhiskyWineInstaller.isBackendAvailable(backend, for: bottle.settings) || backend == current
                     }
                     ForEach(offered, id: \.self) { backend in
                         Text(backend.displayName).tag(backend)
@@ -499,6 +499,7 @@ struct ProgramOverrideSettingsView: View {
             )
             if hasDLLOverride {
                 DLLOverrideEditor(
+                    bottle: bottle,
                     managedOverrides: computedManagedOverrides,
                     customOverrides: programDLLOverridesBinding,
                     warnings: computedDLLWarnings
@@ -596,13 +597,13 @@ struct ProgramOverrideSettingsView: View {
     /// The backend this program actually launches with.
     private var resolvedOverriddenBackend: GraphicsBackend {
         let backend = program.settings.overrides?.graphicsBackend ?? .recommended
-        return backend == .recommended ? GraphicsBackendResolver.resolve() : backend
+        return backend == .recommended ? GraphicsBackendResolver.resolve(for: bottle.settings) : backend
     }
 
     /// The bottle's backend, resolved, for the inherited summary.
     private var resolvedBottleBackend: GraphicsBackend {
         bottle.settings.graphicsBackend == .recommended
-            ? GraphicsBackendResolver.resolve()
+            ? GraphicsBackendResolver.resolve(for: bottle.settings)
             : bottle.settings.graphicsBackend
     }
 
@@ -634,7 +635,7 @@ struct ProgramOverrideSettingsView: View {
     private var computedManagedOverrides: [(entry: DLLOverrideEntry, source: String)] {
         var managed: [(entry: DLLOverrideEntry, source: String)] = []
         if bottle.settings.graphicsBackend == .dxvk {
-            for entry in DLLOverrideResolver.dxvkPreset(builtinD3D12IsD3DMetal: GPTKImporter.isDeployed()) {
+            for entry in DLLOverrideResolver.dxvkPreset(builtinD3D12IsD3DMetal: GPTKImporter.isDeployed(for: bottle)) {
                 managed.append((
                     entry: entry,
                     source: String(localized: "config.dllOverrides.source.dxvk")

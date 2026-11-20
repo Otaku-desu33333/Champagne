@@ -25,7 +25,7 @@ struct BackendPickerView: View {
     /// Whether a backend can be offered on this machine. Defaults to all-true;
     /// production callers gate payload-dependent backends (DXMT) on the
     /// installed runtime.
-    var isBackendAvailable: (GraphicsBackend) -> Bool = { _ in true }
+    var isBackendAvailable: @MainActor (GraphicsBackend) -> Bool = { _ in true }
 
     private let columns = [GridItem(.flexible()), GridItem(.flexible())]
 

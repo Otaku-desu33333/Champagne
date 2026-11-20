@@ -24,6 +24,7 @@ import WhiskyKit
 /// Used at both bottle and program levels to display managed overrides (from DXVK toggle,
 /// launcher presets) and allow editing of custom user overrides.
 struct DLLOverrideEditor: View {
+    let bottle: Bottle
     /// Managed overrides (read-only display with source labels).
     let managedOverrides: [(entry: DLLOverrideEntry, source: String)]
     /// Custom overrides (editable by the user).
@@ -188,7 +189,7 @@ struct DLLOverrideEditor: View {
     }
 
     private func applyDXVKPreset() {
-        for preset in DLLOverrideResolver.dxvkPreset(builtinD3D12IsD3DMetal: GPTKImporter.isDeployed()) {
+        for preset in DLLOverrideResolver.dxvkPreset(builtinD3D12IsD3DMetal: GPTKImporter.isDeployed(for: bottle)) {
             if let existingIndex = customOverrides.firstIndex(where: { $0.dllName == preset.dllName }) {
                 customOverrides[existingIndex] = preset
             } else {

@@ -19,29 +19,39 @@
 import Foundation
 import os.log
 
-/// Discovery of bottles created by the archived original Whisky app
-/// (bundle identifier `com.isaacmarovitz.Whisky`) so this fork can import them.
-///
-/// The fork uses a different bundle identifier, so it doesn't see the original app's
-/// bottles automatically. It is not sandboxed, though, so it can read the original
-/// container directly. Discovered bottles are referenced **in place** (no copy) —
-/// the same way custom-path bottles already work — so importing is non-destructive
-/// and the original app keeps working if it's still installed.
+/// Finds bottles from earlier Whisky installations after Champagne's bundle ID
+/// change. Discovered bottles are referenced in place; their data is not moved
+/// or copied.
 public enum LegacyBottleImport {
     private static let logger = Logger(
-        subsystem: Bundle.whiskyBundleIdentifier,
+        subsystem: Bundle.champagneBundleIdentifier,
         category: "LegacyBottleImport"
     )
 
-    /// Bundle identifier of the archived original Whisky app.
+    /// Bundle identifier of the original Whisky app.
     public static let legacyBundleIdentifier = "com.isaacmarovitz.Whisky"
+    /// Bundle identifier used by the preceding Whisky-branded Champagne build.
+    public static let previousBundleIdentifier = "com.franke.Whisky"
 
     /// `~/Library/Containers/com.isaacmarovitz.Whisky`.
     public static var legacyContainerDirectory: URL {
+        containerDirectory(for: legacyBundleIdentifier)
+    }
+
+    /// The previous Champagne identity's bottle container.
+    public static var previousContainerDirectory: URL {
+        containerDirectory(for: previousBundleIdentifier)
+    }
+
+    private static var sourceContainers: [URL] {
+        [legacyContainerDirectory, previousContainerDirectory]
+    }
+
+    private static func containerDirectory(for bundleIdentifier: String) -> URL {
         FileManager.default.homeDirectoryForCurrentUser
             .appending(path: "Library")
             .appending(path: "Containers")
-            .appending(path: legacyBundleIdentifier)
+            .appending(path: bundleIdentifier)
     }
 
     /// Minimal decode of the original app's bottle registry. Same plist shape as
@@ -50,58 +60,66 @@ public enum LegacyBottleImport {
         var paths: [URL]
     }
 
-    /// Whether the original app's container exists at all. Used to decide whether the
-    /// migration option is worth offering in the UI.
-    public static func legacyContainerExists(at container: URL = legacyContainerDirectory) -> Bool {
-        FileManager.default.fileExists(atPath: container.path(percentEncoded: false))
+    /// Whether any earlier Whisky container exists. An explicit URL keeps this
+    /// check convenient for tests and callers inspecting one source.
+    public static func legacyContainerExists(at container: URL? = nil) -> Bool {
+        (container.map { [$0] } ?? sourceContainers).contains {
+            FileManager.default.fileExists(atPath: $0.path(percentEncoded: false))
+        }
     }
 
     /// URLs of original-app bottles that are valid (contain a `Metadata.plist`) and are
     /// not already registered in `existingPaths`.
     ///
-    /// Sources, in order: the original app's `BottleVM.plist` registry (which also covers
-    /// bottles stored at custom paths outside the default Bottles directory), then a scan
-    /// of the default `Bottles` directory as a fallback. Results are de-duplicated and
-    /// sorted by directory name.
+    /// Reads each source's `BottleVM.plist` registry and scans its default
+    /// `Bottles` directory as a fallback. When no container is specified, both
+    /// the original Whisky app and the previous Champagne bundle ID are checked.
     ///
     /// - Parameters:
-    ///   - legacyContainer: the original app's container directory (injectable for testing).
-    ///   - existingPaths: bottle paths already registered in this fork, to avoid duplicates.
+    ///   - legacyContainer: one source container to inspect, or `nil` to inspect all known sources.
+    ///   - existingPaths: bottle paths already registered in Champagne, to avoid duplicates.
     public static func importableBottleURLs(
-        legacyContainer: URL = legacyContainerDirectory,
+        legacyContainer: URL? = nil,
         existingPaths: [URL]
     ) -> [URL] {
+        discoveredBottleURLs(legacyContainer: legacyContainer, existingPaths: existingPaths).map(\.url)
+    }
+
+    private static func discoveredBottleURLs(
+        legacyContainer: URL?,
+        existingPaths: [URL]
+    ) -> [(url: URL, container: URL)] {
         let existing = Set(existingPaths.map(\.standardizedFileURL))
-        var candidates: [URL] = []
+        var candidates: [(url: URL, container: URL)] = []
 
-        // 1. The registry plist lists every bottle the original app knew about, including
-        //    bottles stored at custom paths outside the Bottles directory.
-        let registryURL = legacyContainer.appending(path: "BottleVM").appendingPathExtension("plist")
-        if let data = try? Data(contentsOf: registryURL),
-           let registry = try? PropertyListDecoder().decode(LegacyRegistry.self, from: data) {
-            candidates.append(contentsOf: registry.paths)
-        }
+        for container in legacyContainer.map({ [$0] }) ?? sourceContainers {
+            let registryURL = container.appending(path: "BottleVM").appendingPathExtension("plist")
+            if let data = try? Data(contentsOf: registryURL),
+               let registry = try? PropertyListDecoder().decode(LegacyRegistry.self, from: data) {
+                candidates.append(contentsOf: registry.paths.map { ($0, container) })
+            }
 
-        // 2. Scan the default Bottles directory in case the registry is missing or stale.
-        let bottlesDir = legacyContainer.appending(path: "Bottles")
-        if let entries = try? FileManager.default.contentsOfDirectory(
-            at: bottlesDir,
-            includingPropertiesForKeys: [.isDirectoryKey]
-        ) {
-            candidates.append(contentsOf: entries)
+            // Scan the default Bottles directory in case its registry is missing or stale.
+            let bottlesDir = container.appending(path: "Bottles")
+            if let entries = try? FileManager.default.contentsOfDirectory(
+                at: bottlesDir,
+                includingPropertiesForKeys: [.isDirectoryKey]
+            ) {
+                candidates.append(contentsOf: entries.map { ($0, container) })
+            }
         }
 
         var seen = Set<URL>()
-        var result: [URL] = []
-        for candidate in candidates {
+        var result: [(url: URL, container: URL)] = []
+        for (candidate, container) in candidates {
             let standardized = candidate.standardizedFileURL
             guard !existing.contains(standardized), seen.insert(standardized).inserted else { continue }
             guard isBottle(at: standardized) else { continue }
-            result.append(standardized)
+            result.append((standardized, container))
         }
 
         logger.info("Discovered \(result.count) importable legacy bottle(s)")
-        return result.sorted { $0.lastPathComponent < $1.lastPathComponent }
+        return result.sorted { $0.url.lastPathComponent < $1.url.lastPathComponent }
     }
 
     /// An importable original-app bottle, with the display name read from its settings.
@@ -110,6 +128,8 @@ public enum LegacyBottleImport {
         public let url: URL
         /// The bottle's display name, read from its settings (falls back to the directory name).
         public let name: String
+        /// The earlier application installation that owns the bottle.
+        public let sourceName: String
         public var id: URL {
             url
         }
@@ -119,11 +139,17 @@ public enum LegacyBottleImport {
     /// display name. Names are read **non-destructively** (see ``readOnlyName(at:)``) — discovery
     /// must never mutate the original app's bottles.
     public static func importableBottles(
-        legacyContainer: URL = legacyContainerDirectory,
+        legacyContainer: URL? = nil,
         existingPaths: [URL]
     ) -> [DiscoveredBottle] {
-        importableBottleURLs(legacyContainer: legacyContainer, existingPaths: existingPaths).map { url in
-            DiscoveredBottle(url: url, name: readOnlyName(at: url) ?? url.lastPathComponent)
+        discoveredBottleURLs(legacyContainer: legacyContainer, existingPaths: existingPaths).map { entry in
+            let sourceName = entry.container.lastPathComponent == previousBundleIdentifier
+                ? "Previous Whisky installation" : "Original Whisky installation"
+            return DiscoveredBottle(
+                url: entry.url,
+                name: readOnlyName(at: entry.url) ?? entry.url.lastPathComponent,
+                sourceName: sourceName
+            )
         }
     }
 

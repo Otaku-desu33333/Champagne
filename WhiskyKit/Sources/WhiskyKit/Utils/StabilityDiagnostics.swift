@@ -48,13 +48,13 @@ public enum StabilityDiagnostics {
     ) async -> String {
         var report = """
         ═══════════════════════════════════════════════════════
-        Whisky Stability Diagnostics Report
+        Champagne Stability Diagnostics Report
         Generated: \(config.now().formatted())
         ═══════════════════════════════════════════════════════
 
         """
 
-        report += await generateSystemInfo(config: config)
+        report += await generateSystemInfo(for: bottle, config: config)
         report += generateBottleSummary(for: bottle)
         report += generateEnvironmentKeySnapshot(for: bottle)
         report += await generateLogSummary(config: config)
@@ -70,7 +70,7 @@ public enum StabilityDiagnostics {
     }
 
     @MainActor
-    private static func generateSystemInfo(config: Configuration) async -> String {
+    private static func generateSystemInfo(for bottle: Bottle, config: Configuration) async -> String {
         var info = """
 
         [SYSTEM INFORMATION]
@@ -93,15 +93,16 @@ public enum StabilityDiagnostics {
         let appVersion = config.bundle.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
         let buildNumber = config.bundle.infoDictionary?["CFBundleVersion"] as? String ?? ""
         if !appVersion.isEmpty {
-            info += "Whisky Version: \(appVersion)\(buildNumber.isEmpty ? "" : " (\(buildNumber))")\n"
+            info += "Champagne Version: \(appVersion)\(buildNumber.isEmpty ? "" : " (\(buildNumber))")\n"
         }
 
-        if let whiskyWineVersion = WhiskyWineInstaller.whiskyWineVersion() {
-            let whiskyWineVersionString =
-                "\(whiskyWineVersion.major).\(whiskyWineVersion.minor).\(whiskyWineVersion.patch)"
-            info += "WhiskyWine Version: \(whiskyWineVersionString)\n"
+        let runtimeIdentifier = bottle.settings.wineRuntimeIdentifier ?? WineRuntimeStore.defaultRuntimeIdentifier
+        if let runtime = WineRuntimeStore.runtime(identifier: runtimeIdentifier) {
+            info += "Wine Runtime: \(runtime.identifier)\n"
+            info += "Wine Runtime Version: \(runtime.versionInfo.version)\n"
+            info += "GPTK Deployed: \(GPTKImporter.isDeployed(for: bottle) ? "yes" : "no")\n"
         } else {
-            info += "WhiskyWine Version: Not installed / unknown\n"
+            info += "Wine Runtime: \(runtimeIdentifier) (not installed)\n"
         }
 
         info += "\n"
@@ -116,6 +117,7 @@ public enum StabilityDiagnostics {
         """
 
         summary += "Bottle Name: \(bottle.settings.name)\n"
+        summary += "Wine Runtime: \(bottle.settings.wineRuntimeIdentifier ?? WineRuntimeStore.defaultRuntimeIdentifier)\n"
         summary += "Windows Version: \(bottle.settings.windowsVersion)\n"
         summary += "Bottle Wine Version: \(bottle.settings.wineVersion)\n\n"
 

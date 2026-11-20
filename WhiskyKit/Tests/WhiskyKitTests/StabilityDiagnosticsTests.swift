@@ -36,7 +36,7 @@ final class StabilityDiagnosticsTests: XCTestCase {
         )
 
         let report = await StabilityDiagnostics.generateDiagnosticReport(for: bottle, config: config)
-        XCTAssertTrue(report.contains("Whisky Stability Diagnostics Report"))
+        XCTAssertTrue(report.contains("Champagne Stability Diagnostics Report"))
         XCTAssertTrue(report.contains("[LOGS]"))
         XCTAssertTrue(report.contains("Logs Folder Status: Not found"))
     }
@@ -108,11 +108,11 @@ final class StabilityDiagnosticsTests: XCTestCase {
 
         let report = await StabilityDiagnostics.generateDiagnosticReport(for: bottle, config: config)
 
-        #if arch(arm64)
-        XCTAssertTrue(report.contains("Architecture: Apple Silicon (arm64)"))
-        #else
-        XCTAssertTrue(report.contains("Architecture: Intel (x86_64)"))
-        #endif
+        if HostArchitecture.isAppleSilicon {
+            XCTAssertTrue(report.contains("Architecture: Apple Silicon (arm64)"))
+        } else {
+            XCTAssertTrue(report.contains("Architecture: Intel (x86_64)"))
+        }
     }
 
     /// A Rockstar bottle on Recommended gets DXVK for its launcher launches, as

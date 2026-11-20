@@ -22,7 +22,7 @@ import os.log
 
 // swiftlint:disable file_length
 
-private let envLogger = Logger(subsystem: Bundle.whiskyBundleIdentifier, category: "WineEnvironment")
+private let envLogger = Logger(subsystem: Bundle.champagneBundleIdentifier, category: "WineEnvironment")
 
 // swiftlint:disable cyclomatic_complexity
 extension Wine {
@@ -43,11 +43,11 @@ extension Wine {
     ///   - programOverrides: Optional per-program setting overrides. `nil` fields inherit from bottle.
     ///   - recommendedBackend: What `.recommended` resolves to, for the bottle and
     ///     for a program set to it. Defaults to `nil`, which asks
-    ///     ``GraphicsBackendResolver`` about the installed runtime.
+    ///     ``GraphicsBackendResolver`` about the bottle's selected runtime.
     ///   - builtinD3D12IsD3DMetal: Whether the runtime's builtin `d3d12` is
     ///     D3DMetal's, which decides whether the DXVK and DXMT presets turn it
     ///     off. Defaults to whether the GPTK payload is deployed, read once so
-    ///     every layer of this launch agrees.
+    ///     every layer of this launch agrees; defaults to this bottle's runtime.
     /// - Returns: The fully resolved environment dictionary for passing to a Wine process.
     @MainActor
     public static func constructWineEnvironment(
@@ -57,10 +57,12 @@ extension Wine {
         programSettings: ProgramSettings? = nil,
         gameProfileEnvironment: [String: String] = [:],
         recommendedBackend: GraphicsBackend? = nil,
-        builtinD3D12IsD3DMetal: Bool = GPTKImporter.isDeployed()
+        builtinD3D12IsD3DMetal: Bool? = nil
     ) -> [String: String] {
         var builder = EnvironmentBuilder()
         var dllResolver = DLLOverrideResolver(managed: [], bottleCustom: [], programCustom: [])
+        let effectiveRecommendedBackend = recommendedBackend ?? GraphicsBackendResolver.resolve(for: bottle.settings)
+        let effectiveBuiltinD3D12IsD3DMetal = builtinD3D12IsD3DMetal ?? GPTKImporter.isDeployed(for: bottle)
 
         // Layer 1: Base -- WINEPREFIX, default WINEDEBUG, GST_DEBUG
         builder.set("WINEPREFIX", bottle.url.path, layer: .base)
@@ -93,8 +95,8 @@ extension Wine {
 
         // Layer 3: Bottle managed -- settings-derived env vars (DXVK, sync, Metal, perf)
         let managedOverrides = bottle.settings.populateBottleManagedLayer(
-            builder: &builder, resolvedBackend: recommendedBackend,
-            builtinD3D12IsD3DMetal: builtinD3D12IsD3DMetal
+            builder: &builder, resolvedBackend: effectiveRecommendedBackend,
+            builtinD3D12IsD3DMetal: effectiveBuiltinD3D12IsD3DMetal
         )
         dllResolver.managed.append(contentsOf: managedOverrides)
 
@@ -113,7 +115,7 @@ extension Wine {
 
         // Layer 4: Launcher managed -- launcher compatibility overrides
         let launcherOverrides = bottle.settings.populateLauncherManagedLayer(
-            builder: &builder, builtinD3D12IsD3DMetal: builtinD3D12IsD3DMetal
+            builder: &builder, builtinD3D12IsD3DMetal: effectiveBuiltinD3D12IsD3DMetal
         )
         dllResolver.managed.append(contentsOf: launcherOverrides)
 
@@ -148,8 +150,8 @@ extension Wine {
             applyProgramOverrides(
                 overrides,
                 frameGeneration: bottle.settings.frameGeneration,
-                recommendedBackend: recommendedBackend,
-                builtinD3D12IsD3DMetal: builtinD3D12IsD3DMetal,
+                recommendedBackend: effectiveRecommendedBackend,
+                builtinD3D12IsD3DMetal: effectiveBuiltinD3D12IsD3DMetal,
                 builder: &builder,
                 dllResolver: &dllResolver
             )
@@ -219,7 +221,7 @@ extension Wine {
 
         // Graphics backend override: replaces bottle-level backend entirely
         if let backend = overrides.graphicsBackend {
-            let resolved = if backend == .recommended {
+        let resolved = if backend == .recommended {
                 recommendedBackend ?? GraphicsBackendResolver.resolve()
             } else {
                 backend

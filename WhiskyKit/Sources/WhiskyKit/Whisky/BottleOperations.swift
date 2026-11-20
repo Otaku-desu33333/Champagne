@@ -333,7 +333,7 @@ public enum BottleOperations {
     /// registry.
     private static func bottleNotFoundError() -> NSError {
         NSError(
-            domain: "com.franke.Whisky",
+            domain: "com.ryanng.champagne",
             code: 1,
             userInfo: [NSLocalizedDescriptionKey: String(localized: "bottle.error.notFound")]
         )

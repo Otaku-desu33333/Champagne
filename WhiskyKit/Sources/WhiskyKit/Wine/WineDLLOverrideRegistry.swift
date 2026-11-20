@@ -40,7 +40,7 @@ public extension Wine {
     }
 
     private static let dllOverrideLogger = Logger(
-        subsystem: "com.isaacmarovitz.WhiskyKit", category: "dll-overrides"
+        subsystem: "com.ryanng.champagne", category: "dll-overrides"
     )
 
     /// Writes each scope's `WINEDLLOVERRIDES`-syntax overrides into a bottle's
@@ -117,18 +117,23 @@ public extension Wine {
         descendantExecutables: [String] = [],
         descendantLaunchers: [LauncherType] = [],
         recommendedBackend: GraphicsBackend? = nil,
-        builtinD3D12IsD3DMetal: Bool = GPTKImporter.isDeployed(),
+        builtinD3D12IsD3DMetal: Bool? = nil,
         writer: DLLOverrideWriter = { try await syncDLLOverrides(bottle: $0, scopes: $1) }
     ) async throws {
+        let effectiveRecommendedBackend = recommendedBackend ?? GraphicsBackendResolver.resolve(for: bottle.settings)
+        let effectiveBuiltinD3D12IsD3DMetal = builtinD3D12IsD3DMetal ?? GPTKImporter.isDeployed(for: bottle)
         let bottleOverrides = constructWineEnvironment(
-            for: bottle, recommendedBackend: recommendedBackend, builtinD3D12IsD3DMetal: builtinD3D12IsD3DMetal
+            for: bottle,
+            recommendedBackend: effectiveRecommendedBackend,
+            builtinD3D12IsD3DMetal: effectiveBuiltinD3D12IsD3DMetal
         )["WINEDLLOVERRIDES"] ?? ""
         var scopes = DLLOverrideScopes(bottle: bottleOverrides)
         let launcher = LauncherType.detect(from: url)
         let launcherSet = { (userOverrides: ProgramOverrides?) in
             launcherDLLOverrides(
                 bottle: bottle, userOverrides: userOverrides,
-                recommendedBackend: recommendedBackend, builtinD3D12IsD3DMetal: builtinD3D12IsD3DMetal
+                recommendedBackend: effectiveRecommendedBackend,
+                builtinD3D12IsD3DMetal: effectiveBuiltinD3D12IsD3DMetal
             )
         }
 
@@ -224,15 +229,18 @@ public extension Wine {
         bottle: Bottle,
         userOverrides: ProgramOverrides? = nil,
         recommendedBackend: GraphicsBackend? = nil,
-        builtinD3D12IsD3DMetal: Bool = GPTKImporter.isDeployed()
+        builtinD3D12IsD3DMetal: Bool? = nil
     ) -> String {
+        let effectiveRecommendedBackend = recommendedBackend ?? GraphicsBackendResolver.resolve(for: bottle.settings)
+        let effectiveBuiltinD3D12IsD3DMetal = builtinD3D12IsD3DMetal ?? GPTKImporter.isDeployed(for: bottle)
         var pinned = userOverrides ?? ProgramOverrides()
         if pinned.graphicsBackend == nil || pinned.graphicsBackend == .recommended {
             pinned.graphicsBackend = .dxvk
         }
         return constructWineEnvironment(
             for: bottle, programOverrides: pinned,
-            recommendedBackend: recommendedBackend, builtinD3D12IsD3DMetal: builtinD3D12IsD3DMetal
+            recommendedBackend: effectiveRecommendedBackend,
+            builtinD3D12IsD3DMetal: effectiveBuiltinD3D12IsD3DMetal
         )["WINEDLLOVERRIDES"] ?? ""
     }
 

@@ -20,7 +20,7 @@
 import Foundation
 import os.log
 
-private let logger = Logger(subsystem: Bundle.whiskyBundleIdentifier, category: "Wine")
+private let logger = Logger(subsystem: Bundle.champagneBundleIdentifier, category: "Wine")
 
 // swiftlint:disable type_body_length
 
@@ -93,6 +93,47 @@ public class Wine {
     /// URL to the `wineserver` binary for Wine server management.
     private static let wineserverBinary: URL = WhiskyWineInstaller.binFolder.appending(path: "wineserver")
 
+    /// The installed runtime selected by a bottle, or an error if that runtime
+    /// has been removed or is no longer valid.
+    @MainActor
+    public static func runtime(for bottle: Bottle) throws -> InstalledWineRuntime {
+        try WineRuntimeStore.selectedRuntime(for: bottle)
+    }
+
+    /// The Wine `bin` directory selected by a bottle.
+    @MainActor
+    public static func wineBinFolder(for bottle: Bottle) throws -> URL {
+        try runtimeLibraryFolder(for: bottle).appending(path: "Wine/bin")
+    }
+
+    /// The Wine executable selected by a bottle.
+    @MainActor
+    public static func wineBinaryPath(for bottle: Bottle) -> URL {
+        expectedRuntimeLibraryFolder(for: bottle).appending(path: "Wine/bin/wine64")
+    }
+
+    /// Resolves the library root used by a bottle. The legacy default keeps its
+    /// historic path even when tests or first-run setup have not installed it;
+    /// named runtimes must be present and fully validated.
+    @MainActor
+    private static func runtimeLibraryFolder(for bottle: Bottle) throws -> URL {
+        let identifier = bottle.settings.wineRuntimeIdentifier ?? WineRuntimeStore.defaultRuntimeIdentifier
+        if identifier == WineRuntimeStore.defaultRuntimeIdentifier {
+            return WhiskyWineInstaller.libraryFolder
+        }
+        return try runtime(for: bottle).libraryFolder
+    }
+
+    /// Expected path for rendering a terminal command. A missing selected
+    /// runtime stays visible as a missing path instead of silently switching
+    /// the command to a different runtime.
+    @MainActor
+    private static func expectedRuntimeLibraryFolder(for bottle: Bottle) -> URL {
+        let identifier = bottle.settings.wineRuntimeIdentifier ?? WineRuntimeStore.defaultRuntimeIdentifier
+        return WineRuntimeStore.libraryFolder(identifier: identifier)
+            ?? WhiskyWineInstaller.applicationFolder.appending(path: "MissingRuntime")
+    }
+
     /// Run a process on a executable file given by the `executableURL`
     private static func runProcess(
         name: String? = nil, args: [String], environment: [String: String], executableURL: URL, directory: URL? = nil,
@@ -164,8 +205,23 @@ public class Wine {
         WineUserProfile.reconcile(bottleURL: bottle.url)
         let wineEnvironment = constructWineEnvironment(for: bottle, environment: environment)
 
-        return try runProcess(
-            name: name, args: args, environment: wineEnvironment, executableURL: wineBinary,
+        return try runBottleWineProcess(
+            name: name, args: args, bottle: bottle, environment: wineEnvironment, fileHandle: fileHandle
+        )
+    }
+
+    /// Runs Wine with a bottle's selected runtime and an optional caller-owned log handle.
+    @MainActor
+    private static func runBottleWineProcess(
+        name: String? = nil,
+        args: [String],
+        bottle: Bottle,
+        environment: [String: String],
+        fileHandle: FileHandle?
+    ) throws -> AsyncStream<ProcessOutput> {
+        try runProcess(
+            name: name, args: args, environment: environment,
+            executableURL: try runtimeLibraryFolder(for: bottle).appending(path: "Wine/bin/wine64"),
             fileHandle: fileHandle
         )
     }
@@ -193,7 +249,8 @@ public class Wine {
         let wineserverEnvironment = constructWineEnvironment(for: bottle, environment: environment)
 
         return try runProcess(
-            name: name, args: args, environment: wineserverEnvironment, executableURL: wineserverBinary,
+            name: name, args: args, environment: wineserverEnvironment,
+            executableURL: try runtime(for: bottle).libraryFolder.appending(path: "Wine/bin/wineserver"),
             fileHandle: fileHandle
         )
     }
@@ -336,6 +393,7 @@ public class Wine {
         }
 
         let launch = try await prepare()
+        let selectedWineBinary = try runtimeLibraryFolder(for: bottle).appending(path: "Wine/bin/wine64")
 
         // Opened after preparation, not before: the registry imports during
         // preparation open logs of their own, and this way the program's log
@@ -370,7 +428,11 @@ public class Wine {
         DiscordIntegration.shared.programLaunching(url, bottle: bottle)
 
         var exitCode: Int32 = 0
-        let process = makeProcess(args: launch.arguments, environment: launch.environment, executableURL: wineBinary)
+        let process = makeProcess(
+            args: launch.arguments,
+            environment: launch.environment,
+            executableURL: selectedWineBinary
+        )
         for await output in
             try startTrackedProgram(process, name: programName, bottle: bottle, fileHandle: fileHandle) {
             onOutput?(output)
@@ -441,11 +503,22 @@ public class Wine {
         overridesApplyToDescendants: Bool = false,
         descendantExecutables: [String] = [],
         descendantLaunchers: [LauncherType] = [],
-        recommendedBackend: GraphicsBackend = GraphicsBackendResolver.resolve(),
-        builtinD3D12IsD3DMetal: Bool = GPTKImporter.isDeployed(),
+        recommendedBackend: GraphicsBackend? = nil,
+        builtinD3D12IsD3DMetal: Bool? = nil,
         overrideWriter: DLLOverrideWriter = { try await syncDLLOverrides(bottle: $0, scopes: $1) },
         importer: RegistryImporter = { try await importRegistry(document: $0, bottle: $1) }
     ) async throws -> PreparedLaunch {
+        // Fail before mutating the prefix if this bottle's selected runtime is
+        // missing. The same runtime determines the binary and graphics payloads.
+        let runtimeIdentifier = bottle.settings.wineRuntimeIdentifier ?? WineRuntimeStore.defaultRuntimeIdentifier
+        let installedRuntime = WineRuntimeStore.runtime(identifier: runtimeIdentifier)
+        if runtimeIdentifier != WineRuntimeStore.defaultRuntimeIdentifier, installedRuntime == nil {
+            throw WineRuntimeStoreError.runtimeNotInstalled(runtimeIdentifier)
+        }
+        let recommendedBackend = recommendedBackend ?? GraphicsBackendResolver.resolve(for: bottle.settings)
+        let builtinD3D12IsD3DMetal = builtinD3D12IsD3DMetal
+            ?? (installedRuntime == nil ? GPTKImporter.isDeployed() : GPTKImporter.isDeployed(for: bottle))
+
         // Font aliases first, before any setting is read: their import can take
         // a few seconds, and a setting changed during it would leave this launch
         // with one backend's files and another's environment. It must finish
@@ -604,7 +677,7 @@ public class Wine {
         WineUserProfile.reconcile(bottleURL: bottle.url)
         let wineEnv = constructWineEnvironment(for: bottle, environment: environment)
         return shellCommand(
-            "\(wineBinary.esc) start /unix \(url.esc) \(escapedArgs)", environment: wineEnv
+            "\(wineBinaryPath(for: bottle).esc) start /unix \(url.esc) \(escapedArgs)", environment: wineEnv
         )
     }
 
@@ -630,6 +703,12 @@ public class Wine {
             words = ["env", "-u", "WINEDLLOVERRIDES"] + words
         }
         return shellCommand(words.map(\.esc).joined(separator: " "), environment: launch.environment)
+    }
+
+    /// Generates a terminal command using the runtime selected by the bottle.
+    @MainActor
+    static func generateRunCommand(for launch: PreparedLaunch, bottle: Bottle) -> String {
+        generateRunCommand(for: launch, wineBinary: wineBinaryPath(for: bottle))
     }
 
     /// Prefixes `command` with an assignment for each environment variable.
@@ -670,8 +749,11 @@ public class Wine {
     /// - Returns: A multi-line string of shell export commands and aliases.
     @MainActor
     public static func generateTerminalEnvironmentCommand(bottle: Bottle) -> String {
-        generateTerminalEnvironmentCommand(
-            binFolder: WhiskyWineInstaller.binFolder,
+        let identifier = bottle.settings.wineRuntimeIdentifier ?? WineRuntimeStore.defaultRuntimeIdentifier
+        let runtimeFolder = WineRuntimeStore.libraryFolder(identifier: identifier)
+            ?? WhiskyWineInstaller.applicationFolder.appending(path: "MissingRuntime")
+        return generateTerminalEnvironmentCommand(
+            binFolder: runtimeFolder.appending(path: "Wine/bin"),
             environment: constructWineEnvironment(for: bottle)
         )
     }
@@ -792,7 +874,9 @@ public class Wine {
         WineUserProfile.reconcile(bottleURL: bottle.url)
         let wineEnvironment = constructWineEnvironment(for: bottle, environment: environment)
 
-        for await output in try runWineProcess(args: args, environment: wineEnvironment, fileHandle: fileHandle) {
+        for await output in try runBottleWineProcess(
+            args: args, bottle: bottle, environment: wineEnvironment, fileHandle: fileHandle
+        ) {
             switch output {
             case .started, .terminated:
                 break
@@ -911,10 +995,12 @@ public class Wine {
     /// on quit whatever the kill-on-quit setting said.
     @MainActor
     public static func killBottleAndWait(bottle: Bottle, timeout: TimeInterval = 5) {
+        guard let selectedWineserver = try? runtimeLibraryFolder(for: bottle)
+            .appending(path: "Wine/bin/wineserver") else { return }
         let process = Process()
-        process.executableURL = wineserverBinary
+        process.executableURL = selectedWineserver
         process.arguments = ["-k"]
-        process.currentDirectoryURL = wineserverBinary.deletingLastPathComponent()
+        process.currentDirectoryURL = selectedWineserver.deletingLastPathComponent()
         process.environment = constructWineEnvironment(for: bottle, environment: [:])
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
@@ -943,15 +1029,27 @@ public class Wine {
     ///   when DXVK is enabled in the bottle settings.
     @MainActor
     public static func enableDXVK(bottle: Bottle) throws {
+        let runtimeLibraryFolder = try runtimeLibraryFolder(for: bottle)
+        let runtimeIdentifier = bottle.settings.wineRuntimeIdentifier ?? WineRuntimeStore.defaultRuntimeIdentifier
+        let runtimeDXVKFolder = runtimeLibraryFolder.appending(path: "DXVK")
         try FileManager.default.replaceDLLs(
             in: bottle.url.appending(path: "drive_c").appending(path: "windows").appending(path: "system32"),
-            withContentsIn: Wine.dxvkFolder.appending(path: "x64")
+            withContentsIn: runtimeDXVKFolder.appending(path: "x64")
         )
         try FileManager.default.replaceDLLs(
             in: bottle.url.appending(path: "drive_c").appending(path: "windows").appending(path: "syswow64"),
-            withContentsIn: Wine.dxvkFolder.appending(path: "x32")
+            withContentsIn: runtimeDXVKFolder.appending(path: "x32")
         )
-        reconcileDXGIForDXVK(prefixRoot: bottle.url)
+        let gptkOriginals = GPTKImporter.originalsFolder(
+            inStore: GPTKImporter.storeFolder,
+            runtimeIdentifier: runtimeIdentifier
+        )
+        reconcileDXGIForDXVK(
+            prefixRoot: bottle.url,
+            gptkOriginalsDXGI: gptkOriginals.appending(path: "dxgi.dll"),
+            gptkPayloadIsDeployed: GPTKImporter.isDeployed(for: bottle),
+            libraryFolder: runtimeLibraryFolder
+        )
     }
 
     /// Reconciles the prefix's `dxgi.dll` with the GPTK payload state, keyed on
@@ -1289,7 +1387,11 @@ public class Wine {
     ///   graphics backend is `.dxmt`.
     @MainActor
     public static func enableDXMT(bottle: Bottle) throws {
-        try enableDXMT(payloadRoot: Wine.dxmtFolder, prefixRoot: bottle.url)
+        let runtimeLibraryFolder = try runtimeLibraryFolder(for: bottle)
+        try enableDXMT(
+            payloadRoot: runtimeLibraryFolder.appending(path: "DXMT"),
+            prefixRoot: bottle.url
+        )
     }
 
     /// Performs the DXMT installation against explicit roots. Factored out of
@@ -1427,7 +1529,7 @@ public extension Wine {
     /// timestamps as filenames.
     static let logsFolder = FileManager.default.urls(
         for: .libraryDirectory, in: .userDomainMask
-    )[0].appending(path: "Logs").appending(path: Bundle.whiskyBundleIdentifier)
+    )[0].appending(path: "Logs").appending(path: Bundle.champagneBundleIdentifier)
 
     /// Enforces log retention policy by deleting the oldest `.log` files until total size is under the limit.
     ///

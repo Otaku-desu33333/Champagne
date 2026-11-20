@@ -27,7 +27,7 @@ struct GraphicsConfigSection: View {
 
     private var resolvedBackend: GraphicsBackend {
         if bottle.settings.graphicsBackend == .recommended {
-            return GraphicsBackendResolver.resolve()
+            return GraphicsBackendResolver.resolve(for: bottle.settings)
         }
         return bottle.settings.graphicsBackend
     }
@@ -47,7 +47,7 @@ struct GraphicsConfigSection: View {
                 selection: $bottle.settings.graphicsBackend,
                 resolvedBackend: resolvedBackend,
                 isBackendAvailable: { backend in
-                    WhiskyWineInstaller.isBackendAvailable(backend)
+                    WhiskyWineInstaller.isBackendAvailable(backend, for: bottle.settings)
                 }
             )
 
@@ -60,7 +60,7 @@ struct GraphicsConfigSection: View {
             // A bottle explicitly set to D3DMetal without its payload silently
             // degrades to WineD3D at launch — say so instead (issue #146).
             if bottle.settings.graphicsBackend == .d3dMetal,
-               !WhiskyWineInstaller.isBackendAvailable(.d3dMetal) {
+               !WhiskyWineInstaller.isBackendAvailable(.d3dMetal, for: bottle.settings) {
                 d3dMetalMissingWarning
             }
 
