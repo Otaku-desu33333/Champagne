@@ -41,7 +41,7 @@ public final class ProcessRegistry: @unchecked Sendable {
 
     /// Posted on the main thread whenever a bottle's tracked processes or launch
     /// session change. `userInfo[bottleURLKey]` holds the bottle's URL.
-    public static let didChangeNotification = Notification.Name("com.franke.Whisky.processRegistryDidChange")
+    public static let didChangeNotification = Notification.Name("com.ryanng.champagne.processRegistryDidChange")
     /// The `userInfo` key of ``didChangeNotification`` that holds the bottle URL.
     public static let bottleURLKey = "bottleURL"
 
@@ -62,7 +62,7 @@ public final class ProcessRegistry: @unchecked Sendable {
     /// idling in the tray would then keep the display awake for hours.
     private var displayWakeAssertion: IOPMAssertionID = .init(0)
 
-    let logger = Logger(subsystem: Bundle.whiskyBundleIdentifier, category: "ProcessRegistry")
+    let logger = Logger(subsystem: Bundle.champagneBundleIdentifier, category: "ProcessRegistry")
 
     private init() {}
 

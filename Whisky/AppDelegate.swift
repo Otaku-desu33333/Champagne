@@ -21,7 +21,7 @@ import os
 import SwiftUI
 import WhiskyKit
 
-private let logger = Logger(subsystem: Bundle.whiskyBundleIdentifier, category: "AppDelegate")
+private let logger = Logger(subsystem: Bundle.champagneBundleIdentifier, category: "AppDelegate")
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     @AppStorage("hasShownMoveToApplicationsAlert") private var hasShownMoveToApplicationsAlert = false
@@ -156,7 +156,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         Bundle.main.resourceURL?.deletingLastPathComponent().deletingLastPathComponent()
     }
 
-    private static let expectedUrl = URL(fileURLWithPath: "/Applications/Whisky.app")
+    private static let expectedUrl = URL(fileURLWithPath: "/Applications/Champagne.app")
 
     private static var insideAppsFolder: Bool {
         if let url = appUrl {

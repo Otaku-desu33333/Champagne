@@ -19,7 +19,7 @@
 import Foundation
 import os.log
 
-private let logger = Logger(subsystem: Bundle.whiskyBundleIdentifier, category: "BottleFontBootstrap")
+private let logger = Logger(subsystem: Bundle.champagneBundleIdentifier, category: "BottleFontBootstrap")
 
 /// Copies a small set of host fonts into a bottle's `drive_c/windows/Fonts` directory
 /// so Unity titles using dynamic font fallback don't render missing glyphs.

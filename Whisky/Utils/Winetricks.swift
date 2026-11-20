@@ -21,7 +21,7 @@ import Foundation
 import os
 import WhiskyKit
 
-private let logger = Logger(subsystem: Bundle.whiskyBundleIdentifier, category: "Winetricks")
+private let logger = Logger(subsystem: Bundle.champagneBundleIdentifier, category: "Winetricks")
 
 enum WinetricksCategories: String {
     case apps

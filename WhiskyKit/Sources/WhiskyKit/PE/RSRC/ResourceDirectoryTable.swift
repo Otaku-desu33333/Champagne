@@ -20,7 +20,7 @@ import Foundation
 import os.log
 import SemanticVersion
 
-private let logger = Logger(subsystem: Bundle.whiskyBundleIdentifier, category: "ResourceDirectoryTable")
+private let logger = Logger(subsystem: Bundle.champagneBundleIdentifier, category: "ResourceDirectoryTable")
 
 /// A shared, reference-type budget for the total number of directory entries the
 /// resource walk may process across the whole tree.

@@ -20,7 +20,7 @@ import AppKit
 import Foundation
 import os.log
 
-private let logger = Logger(subsystem: Bundle.whiskyBundleIdentifier, category: "PortableExecutable")
+private let logger = Logger(subsystem: Bundle.champagneBundleIdentifier, category: "PortableExecutable")
 
 /// An error that occurred while parsing a PE file.
 public struct PEError: Error {

@@ -30,7 +30,7 @@ import os.log
 public final class DiscordIntegration {
     public static let shared = DiscordIntegration()
 
-    private static let logger = Logger(subsystem: Bundle.whiskyBundleIdentifier, category: "DiscordIntegration")
+    private static let logger = Logger(subsystem: Bundle.champagneBundleIdentifier, category: "DiscordIntegration")
 
     /// How long to leave a presence alone before probing whether its bottle is
     /// still running. The probe is a `wineserver -k0`, so this is also how often

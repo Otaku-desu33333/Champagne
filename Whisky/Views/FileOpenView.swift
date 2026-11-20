@@ -20,7 +20,7 @@ import os.log
 import SwiftUI
 import WhiskyKit
 
-private let logger = Logger(subsystem: Bundle.whiskyBundleIdentifier, category: "FileOpenView")
+private let logger = Logger(subsystem: Bundle.champagneBundleIdentifier, category: "FileOpenView")
 
 struct FileOpenView: View {
     var fileURL: URL

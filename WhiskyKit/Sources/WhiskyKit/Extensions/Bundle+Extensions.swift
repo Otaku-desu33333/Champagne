@@ -19,7 +19,14 @@
 import Foundation
 
 public extension Bundle {
+    /// Champagne's stable storage and logging namespace. The CLI and thumbnail
+    /// extension have their own bundle IDs, but they must address the same app data.
+    static var champagneBundleIdentifier: String {
+        "com.ryanng.champagne"
+    }
+
+    /// Compatibility alias for clients that still use WhiskyKit's former name.
     static var whiskyBundleIdentifier: String {
-        Bundle.main.bundleIdentifier ?? "com.franke.Whisky"
+        champagneBundleIdentifier
     }
 }

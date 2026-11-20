@@ -29,7 +29,7 @@ import WhiskyKit
 @MainActor
 enum RemediationExecutor {
     private static let logger = Logger(
-        subsystem: Bundle.whiskyBundleIdentifier, category: "RemediationExecutor"
+        subsystem: Bundle.champagneBundleIdentifier, category: "RemediationExecutor"
     )
 
     /// Applies `action` to `bottle`, reporting user-facing progress through

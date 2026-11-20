@@ -205,7 +205,7 @@ extension FileHandle {
         let macOSVersionString =
             "\(macOSVersion.majorVersion).\(macOSVersion.minorVersion).\(macOSVersion.patchVersion)"
 
-        header += "Whisky Version: \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] ?? "")\n"
+        header += "Champagne Version: \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] ?? "")\n"
         header += "Date: \(ISO8601DateFormatter().string(from: Date.now))\n"
         header += "macOS Version: \(macOSVersionString)\n\n"
         writeWineLog(line: header)
@@ -240,8 +240,11 @@ extension FileHandle {
         header += "Bottle Name: \(bottle.settings.name)\n"
         header += "Bottle URL: \(bottle.url.path)\n\n"
 
-        if let version = WhiskyWineInstaller.whiskyWineVersion() {
-            header += "WhiskyWine Version: \(version.major).\(version.minor).\(version.patch)\n"
+        let runtimeIdentifier = bottle.settings.wineRuntimeIdentifier ?? WineRuntimeStore.defaultRuntimeIdentifier
+        header += "Wine Runtime: \(runtimeIdentifier)\n"
+        if let runtime = WineRuntimeStore.runtime(identifier: runtimeIdentifier) {
+            header += "Wine Runtime Version: \(runtime.versionInfo.version)\n"
+            header += "GPTK Deployed: \(GPTKImporter.isDeployed(for: bottle))\n"
         }
         header += "Windows Version: \(bottle.settings.windowsVersion)\n"
         header += "Enhanced Sync: \(bottle.settings.enhancedSync)\n\n"

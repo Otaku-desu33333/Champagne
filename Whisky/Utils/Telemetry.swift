@@ -23,7 +23,7 @@ import WhiskyKit
 
 private extension Logger {
     static let telemetry = Logger(
-        subsystem: Bundle.whiskyBundleIdentifier,
+        subsystem: Bundle.champagneBundleIdentifier,
         category: "Telemetry"
     )
 }

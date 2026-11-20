@@ -34,7 +34,7 @@ import os.log
 public actor DiscordPresence {
     public static let shared = DiscordPresence()
 
-    private static let logger = Logger(subsystem: Bundle.whiskyBundleIdentifier, category: "DiscordPresence")
+    private static let logger = Logger(subsystem: Bundle.champagneBundleIdentifier, category: "DiscordPresence")
 
     /// The Discord application this presence is published under, when a build
     /// carries no id of its own.

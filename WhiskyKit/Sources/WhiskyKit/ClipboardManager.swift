@@ -73,7 +73,7 @@ public final class ClipboardManager {
     public static let shared = ClipboardManager()
 
     private let pasteboard = NSPasteboard.general
-    private let logger = Logger(subsystem: Bundle.whiskyBundleIdentifier, category: "ClipboardManager")
+    private let logger = Logger(subsystem: Bundle.champagneBundleIdentifier, category: "ClipboardManager")
 
     /// Size threshold for considering clipboard content "large" (10 KB).
     ///

@@ -18,15 +18,15 @@
 
 import Foundation
 
-/// What a `whisky://` URL is allowed to say.
+/// What a `champagne://` URL is allowed to say.
 ///
 /// This parser is the security boundary of the URL scheme, which is why it
 /// lives apart from the code that acts on it and is tested on its own. There
 /// are exactly two forms and no third:
 ///
 /// ```
-/// whisky://launch?steam=<appid>[&bottle=<name>]
-/// whisky://launch?pin=<name>[&bottle=<name>]
+/// champagne://launch?steam=<appid>[&bottle=<name>]
+/// champagne://launch?pin=<name>[&bottle=<name>]
 /// ```
 ///
 /// Neither can name an executable. A `path=` form would let any web page pick
@@ -47,7 +47,7 @@ public enum WhiskyURL {
         case pin(name: String, bottle: String?)
     }
 
-    public static let scheme = "whisky"
+    public static let scheme = "champagne"
 
     /// Parses a URL, or returns `nil` for anything that is not one of the two
     /// forms, including a different scheme, a different host, a missing or
@@ -57,6 +57,7 @@ public enum WhiskyURL {
     /// - Returns: The request, or `nil` if the URL says anything else.
     public static func parse(_ url: URL) -> Request? {
         guard url.scheme?.lowercased() == scheme, url.host()?.lowercased() == "launch",
+              url.path.isEmpty || url.path == "/",
               let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
         else { return nil }
 

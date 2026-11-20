@@ -56,7 +56,8 @@ public extension Program {
     /// - Returns: The full Wine command string ready for terminal execution.
     /// - Throws: An error if the bottle cannot be prepared.
     func prepareTerminalCommand(args: [String]) async throws -> String {
-        try await Wine.generateRunCommand(for: prepareLaunch(args: args))
+        let launch = try await prepareLaunch(args: args)
+        return Wine.generateRunCommand(for: launch, bottle: bottle)
     }
 }
 

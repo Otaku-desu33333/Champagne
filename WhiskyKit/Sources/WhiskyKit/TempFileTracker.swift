@@ -43,7 +43,7 @@ public final class TempFileTracker: @unchecked Sendable {
     private let lock = NSLock()
     private var tempFiles: [URL: TempFileInfo] = [:]
 
-    private let logger = Logger(subsystem: Bundle.whiskyBundleIdentifier, category: "TempFileTracker")
+    private let logger = Logger(subsystem: Bundle.champagneBundleIdentifier, category: "TempFileTracker")
 
     /// Information about a tracked temporary file.
     public struct TempFileInfo: Hashable, Sendable {

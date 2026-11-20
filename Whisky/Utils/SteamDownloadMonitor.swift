@@ -20,7 +20,7 @@ import Foundation
 import os
 import WhiskyKit
 
-private let logger = Logger(subsystem: Bundle.whiskyBundleIdentifier, category: "SteamDownloadMonitor")
+private let logger = Logger(subsystem: Bundle.champagneBundleIdentifier, category: "SteamDownloadMonitor")
 
 /// Status of a Steam download stall check.
 enum StallStatus: Equatable {
@@ -269,6 +269,6 @@ class SteamDownloadMonitor: ObservableObject {
 extension Notification.Name {
     /// Posted when a Steam download stall is detected.
     static let steamDownloadStallDetected = Notification.Name(
-        "com.franke.Whisky.steamDownloadStallDetected"
+        "com.ryanng.champagne.steamDownloadStallDetected"
     )
 }

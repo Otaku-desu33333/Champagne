@@ -112,7 +112,7 @@ public final class TroubleshootingFlowEngine: ObservableObject {
     let sessionStore: any TroubleshootingSessionStoring
 
     let logger = Logger(
-        subsystem: "com.franke.Whisky",
+        subsystem: "com.ryanng.champagne",
         category: "TroubleshootingFlowEngine"
     )
 

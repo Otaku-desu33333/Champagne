@@ -41,7 +41,8 @@ struct DomainError: LocalizedError {
 @main
 struct Whisky: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
-        abstract: "A CLI interface for Whisky.",
+        commandName: "champagne",
+        abstract: "A CLI interface for Champagne.",
         discussion: """
         Exit codes: 64 for a malformed invocation (unknown flags, missing or \
         empty arguments; printed with usage), 1 for a well-formed command \

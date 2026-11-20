@@ -20,7 +20,7 @@ import Foundation
 import os
 import WhiskyKit
 
-private let logger = Logger(subsystem: Bundle.whiskyBundleIdentifier, category: "DependencyManager")
+private let logger = Logger(subsystem: Bundle.champagneBundleIdentifier, category: "DependencyManager")
 
 /// Static utility methods for checking and recommending Windows dependencies.
 ///

@@ -32,7 +32,7 @@ import os.log
 /// It is run out of the bundle rather than installed into the bottle, so
 /// enabling and disabling this leaves no trace in a prefix.
 public enum DiscordBridge {
-    private static let logger = Logger(subsystem: Bundle.whiskyBundleIdentifier, category: "DiscordBridge")
+    private static let logger = Logger(subsystem: Bundle.champagneBundleIdentifier, category: "DiscordBridge")
 
     /// The relay binary's name, without its extension.
     public static let executableName = "WhiskyDiscordBridge"

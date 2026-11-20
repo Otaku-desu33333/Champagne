@@ -150,10 +150,10 @@ public extension ShortcutCreator {
     ///   - notFoundMessage: Message of that alert.
     static func liveLaunchScript(
         for target: LiveTarget,
-        notFoundTitle: String = String(localized: "shortcut.notFound.title", defaultValue: "Whisky not found"),
+        notFoundTitle: String = String(localized: "shortcut.notFound.title", defaultValue: "Champagne not found"),
         notFoundMessage: String = String(
             localized: "shortcut.notFound.message",
-            defaultValue: "Install Whisky to use this shortcut."
+            defaultValue: "Install Champagne to use this shortcut."
         )
     ) -> String {
         let invocation = switch target {
@@ -168,10 +168,10 @@ public extension ShortcutCreator {
             + " message \(appleScriptQuoted(notFoundMessage))"
 
         return """
-        WHISKY_CMD="/Applications/Whisky.app/Contents/Resources/WhiskyCmd"
+        WHISKY_CMD="/Applications/Champagne.app/Contents/Resources/WhiskyCmd"
         if [ ! -x "$WHISKY_CMD" ]; then
             WHISKY_APP="$(mdfind "kMDItemCFBundleIdentifier == '\(Bundle
-            .whiskyBundleIdentifier)'" 2>/dev/null | head -n 1)"
+            .champagneBundleIdentifier)'" 2>/dev/null | head -n 1)"
             WHISKY_CMD="$WHISKY_APP/Contents/Resources/WhiskyCmd"
         fi
         if [ ! -x "$WHISKY_CMD" ]; then

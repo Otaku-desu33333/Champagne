@@ -157,7 +157,7 @@ public struct RunLogHistory: Codable, Equatable {
 /// Run history is stored in a separate `.run-history.plist` file per program
 /// (not in the main `ProgramSettings` plist) to avoid bloating the settings file.
 public enum RunLogStore {
-    private static let logger = Logger(subsystem: Bundle.whiskyBundleIdentifier, category: "RunLogStore")
+    private static let logger = Logger(subsystem: Bundle.champagneBundleIdentifier, category: "RunLogStore")
 
     /// Returns the URL for a program's run history plist file.
     ///

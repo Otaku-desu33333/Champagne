@@ -19,7 +19,7 @@
 import Foundation
 import os
 
-private let logger = Logger(subsystem: Bundle.whiskyBundleIdentifier, category: "ResumableDownloader")
+private let logger = Logger(subsystem: Bundle.champagneBundleIdentifier, category: "ResumableDownloader")
 
 /// Downloads a file over HTTP with resume support and bounded automatic retry.
 ///
