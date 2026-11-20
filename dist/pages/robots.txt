@@ -1,4 +1,1 @@
-User-agent: *
-Allow: /
-
-Sitemap: https://frankea.github.io/Whisky/sitemap.xml
+User-agent: *\nAllow: /\n\nSitemap: https://otaku-desu33333.github.io/Champagne/sitemap.xml\n

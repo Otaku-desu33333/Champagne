@@ -3,7 +3,7 @@
 **Feature:** Launcher Compatibility System (frankea/Whisky#41)
 **Last Updated:** January 12, 2026
 
-> **Note:** This documentation references issue numbers from both this fork (frankea/Whisky) and the original upstream project (whisky-app/whisky). Upstream references are kept for historical context. Please report new issues to [frankea/Whisky](https://github.com/frankea/Whisky/issues).
+> **Note:** This guide retains issue references from the archived upstream Whisky project and the community fork history. Those references are historical; report new Champagne issues in the [Champagne issue tracker](https://github.com/Otaku-desu33333/Champagne/issues).
 
 ---
 
@@ -239,7 +239,7 @@ Battle.net's web-based authentication requires proper Chromium rendering.
 1. **Enable Launcher Compatibility:**
    - Detect as Paradox Launcher (Auto or Manual)
 
-Whisky has no Paradox-specific environment fix. The `WINE_DISABLE_FAST_PATH`
+Champagne has no Paradox-specific environment fix. The `WINE_DISABLE_FAST_PATH`
 workaround earlier versions set is read by no shipped runtime, so it was removed.
 
 **Related Upstream Issues:**
@@ -351,7 +351,7 @@ If launchers become misconfigured:
    - Right-click bottle → Show in Finder
    - Delete `Metadata.plist`
 3. **Recreate Bottle:**
-   - Whisky will regenerate with defaults
+   - Champagne will regenerate with defaults
 4. **Re-enable Launcher Compatibility**
 
 ### Check Wine Logs
@@ -360,7 +360,7 @@ Launcher crashes may leave clues in Wine logs:
 
 1. **Open Logs Folder:**
    ```
-   ~/Library/Logs/com.franke.Whisky/
+   ~/Library/Logs/com.ryanng.champagne/
    ```
 
 2. **Find Latest Log:**
@@ -383,7 +383,7 @@ Ensure Wine is properly installed:
    - Should show version 9.0 or later
 
 2. **Verify WhiskyWine:**
-   - Check `/Users/[username]/Library/Application Support/com.franke.Whisky/Libraries/Wine/`
+   - Check `/Users/[username]/Library/Application Support/com.ryanng.champagne/Libraries/Wine/`
    - Should contain `bin/`, `lib/`, `share/` directories
 
 ### Test in Clean Bottle
@@ -542,9 +542,9 @@ Include in your issue report:
 
 ### Community Resources
 
-- **GitHub Issues:** https://github.com/frankea/Whisky/issues
+- **GitHub Issues:** https://github.com/Otaku-desu33333/Champagne/issues
 - **Upstream Repository:** https://github.com/whisky-app/whisky
-- **This Fork's Tracking Issue:** frankea/Whisky#41
+- **Historical community-fork tracking issue:** frankea/Whisky#41
 
 ---
 
@@ -631,7 +631,7 @@ Before making changes:
 **A:** Currently, settings apply to the detected launcher. Per-game overrides may be added in future versions.
 
 ### Q: Why do some launchers use an English locale?
-**A:** The Rockstar, EA App, Epic Games, and Battle.net presets set en_US.UTF-8 to avoid locale problems reported for those launchers. Steam's preset sets no locale, so with Locale Override on Auto, Steam and the games it starts get your Mac's language and region. Launcher bottles that older versions of Whisky set to English are put back on Auto once. Locale Override can pick a specific locale for any launcher.
+**A:** The Rockstar, EA App, Epic Games, and Battle.net presets set en_US.UTF-8 to avoid locale problems reported for those launchers. Steam's preset sets no locale, so with Locale Override on Auto, Steam and the games it starts get your Mac's language and region. Launcher bottles that older Champagne builds set to English are put back on Auto once. Locale Override can pick a specific locale for any launcher.
 
 ---
 

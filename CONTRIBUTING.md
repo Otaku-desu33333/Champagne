@@ -1,16 +1,16 @@
 # How to Contribute
 
-Thanks for your interest! First, make a fork of Whisky, create a new branch for your changes, and get coding!
+Thanks for your interest in Champagne. Fork this repository, create a branch for your changes, and open a pull request.
 
 ## Build Environment
 
-Whisky is built using **Xcode 16** on **macOS Sequoia 15.0** or later. All external dependencies are handled through the Swift Package Manager.
+Champagne is built using **Xcode 16** on **macOS Sequoia 15.0** or later. All external dependencies are handled through the Swift Package Manager.
 
 ## Code Style
 
 ### Linting with SwiftLint
 
-Every Whisky commit is automatically linted using SwiftLint. You can run these checks locally by building in Xcode; violations will appear as errors or warnings. For your pull request to be merged, you must meet all requirements outlined by SwiftLint and have no violations.
+Every Champagne commit is automatically linted using SwiftLint. You can run these checks locally by building in Xcode; violations will appear as errors or warnings. For your pull request to be merged, you must meet all requirements outlined by SwiftLint and have no violations.
 
 ### Formatting with SwiftFormat
 
@@ -73,13 +73,11 @@ PR** — hand-editing the string catalog tends to re-serialize the whole file
 (producing huge, unreviewable diffs) and can silently drop existing
 translations.
 
-Translations are managed through Crowdin and synced automatically: the
-[`Crowdin`](.github/workflows/Crowdin.yml) workflow uploads new English strings
-to the project's Crowdin, and opens a `New translations from Crowdin` pull
-request when translators add or update strings. To help translate, contribute
-through the [Whisky Crowdin project](https://crowdin.com/project/frankea-whisky)
-rather than opening a PR here. If Crowdin asks you to join, use the access
-request prompt on the project page.
+The string catalog currently includes translations inherited from the
+upstream project. Champagne does not have a separate translation service
+configured yet. Keep new source strings in the English entries; do not direct
+contributors to the upstream Crowdin project or change existing translations
+without coordinating with the maintainers.
 
 ## Changelog
 
@@ -158,7 +156,7 @@ Tests that need bottle fixtures call `requireBottleFixture()`, which
 `XCTSkip`s them when the user container has no bottles (always true on a
 fresh CI runner). The fixture-free tests — the create-bottle sheet flow
 and toolbar checks — run for real on every CI run. To exercise the
-fixture-dependent tests locally, create at least one bottle in Whisky
+fixture-dependent tests locally, create at least one bottle in Champagne
 before running the suite.
 
 All tests must pass before your PR can be merged.

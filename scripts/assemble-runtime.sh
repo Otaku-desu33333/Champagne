@@ -18,7 +18,8 @@ BASE_SHA256="9c3d2a7d9bb682ae8398d8bae458e3cb52bb9f5a3345fb0830a64d9b6a1025f8"
 DXMT_VERSION="0.80"
 DXMT_ARCHIVE_DIR="${DXMT_ARCHIVE_DIR:-$HOME/Projects/Whisky-runtime-archive/dxmt-v$DXMT_VERSION}"
 DXVK_VERSION="1.10.3"   # carried over unchanged from the base runtime
-REPO="frankea/Whisky"
+BASE_REPO="${BASE_REPO:-frankea/Whisky}"
+RELEASE_REPO="${RELEASE_REPO:-Otaku-desu33333/Champagne}"
 # -----------------------------------------------------------------------------
 
 # DXMT ships only the `wine_builtin_dll=true` release asset, whose
@@ -66,7 +67,7 @@ DXMT_SRC="$WORKDIR/dxmt/v$DXMT_VERSION"
 [ -d "$DXMT_SRC/x86_64-windows" ] || { echo "error: unexpected DXMT payload layout" >&2; exit 1; }
 
 # 2. Fetch and verify the base runtime.
-gh release download "$BASE_TAG" --repo "$REPO" --pattern 'Libraries.tar.gz' --dir "$WORKDIR"
+gh release download "$BASE_TAG" --repo "$BASE_REPO" --pattern 'Libraries.tar.gz' --dir "$WORKDIR"
 echo "$BASE_SHA256  $WORKDIR/Libraries.tar.gz" | shasum -a 256 -c - \
   || { echo "error: base runtime digest mismatch" >&2; exit 1; }
 
@@ -141,7 +142,7 @@ Follow-ups (see docs/ReleaseWorkflow.md "Wine Libraries release"):
        grep -aL 'Wine builtin DLL' Libraries/DXMT/x64/d3d11.dll   # trio = native
        grep -al 'Wine builtin DLL' Libraries/Wine/lib/wine/x86_64-windows/winemetal.dll  # winemetal = builtin
   2. cp "$OUT" "$WORKDIR/Libraries.tar.gz" && \\
-     gh release create v$NEW_VERSION --repo $REPO --title "Wine Libraries v$NEW_VERSION" \\
+     gh release create v$NEW_VERSION --repo $RELEASE_REPO --title "Wine Libraries v$NEW_VERSION" \\
        --notes "..." "$WORKDIR/Libraries.tar.gz"
      # The asset FILENAME must be exactly Libraries.tar.gz — the app downloads
      # releases/download/vX.Y.Z/Libraries.tar.gz by name. gh's "path#label"

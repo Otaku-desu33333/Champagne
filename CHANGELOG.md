@@ -8,11 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- Wine runtimes can be imported side by side and selected per bottle; the
+  existing default runtime and bottle files stay in place.
 - The "when switching away with running processes" setting now takes
-  effect. Its default is Ask, so switching bottles while a program Whisky
-  launched is still running now asks whether to keep it running (#352).
+  effect. Its default is Ask, so switching bottles while a program Champagne
+  launched is still running now asks whether to keep it running.
 
 ### Fixed
+- A bottle's saved graphics backend now falls back for one launch when the
+  selected runtime cannot provide it, without changing the saved preference.
+- GPTK startup repair now covers capable named runtimes. Removing or
+  replacing the stored payload restores its managed DLLs across runtimes
+  first, and Settings refuses those operations while a bottle is running.
+- Named Wine runtime roots that are symlinks are ignored, and GPTK deployment
+  stops if stale original-DLL backups cannot be removed before a version stamp
+  is updated.
 - Guided troubleshooting: "No, still broken" moves on to the next check
   instead of giving up after the first fix, launcher-specific steps follow
   the detected launcher, and checks use the bottle's real audio device,
@@ -1315,6 +1325,6 @@ When adding entries to this changelog, use the following categories:
 - **Security** - Vulnerability fixes
 - **Documentation** - Documentation-only changes
 
-[Unreleased]: https://github.com/frankea/Whisky/compare/v3.0.0...HEAD
+[Unreleased]: https://github.com/Otaku-desu33333/Champagne/compare/main...HEAD
 [3.0.0]: https://github.com/frankea/Whisky/releases/tag/v3.0.0
 [2.5.0]: https://github.com/frankea/Whisky/releases/tag/v2.5.0

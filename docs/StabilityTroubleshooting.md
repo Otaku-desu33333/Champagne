@@ -12,8 +12,8 @@ This document is a contributor-facing playbook for triaging **critical stability
 Use this guide for reports like:
 - macOS kernel panic / reboot during game launch or gameplay
 - Complete system freeze requiring force reboot
-- Whisky UI freezes (e.g., opening Bottle Configuration)
-- Whisky crashes on launch or during WhiskyWine installation
+- Champagne UI freezes (e.g., opening Bottle Configuration)
+- Champagne crashes on launch or during WhiskyWine installation
 
 ## Quick Mitigations (User-Facing)
 
@@ -25,7 +25,7 @@ Use this guide for reports like:
 
 ### 1) Stability Diagnostics Report (If Available)
 
-If you're on a build that includes the Stability Diagnostics button (see `frankea/Whisky#56`), collect this report first:
+If you're on a build that includes the Stability Diagnostics button (first tracked in the community fork's frankea/Whisky#56), collect this report first. Report new issues in the [Champagne issue tracker](https://github.com/Otaku-desu33333/Champagne/issues).
 
 1. Open the affected bottle
 2. Go to **Config**
@@ -42,7 +42,7 @@ Notes:
 
 In the app, use **Open Logs Folder** (menu item) and attach the newest `.log` file(s) if requested.
 
-Whisky also enforces log size limits (per-file cap + folder cap) to avoid runaway disk usage.
+Champagne also enforces log size limits (per-file cap + folder cap) to avoid runaway disk usage.
 
 ### 3) macOS crash/panic logs
 
@@ -55,7 +55,7 @@ For **kernel panics / reboots**:
 Please include:
 - **Mac model** (e.g., M3 Max)
 - **macOS version** (e.g., 15.2 / 15.4.1)
-- **Whisky version** and **WhiskyWine version**
+- **Champagne version** and **WhiskyWine version**
 - **Game/app** and distribution (Steam/GOG/etc.)
 - **Bottle settings toggles**: Sequoia compat, DXVK, DXR, Enhanced Sync
 - **Steps to reproduce** (smallest possible)

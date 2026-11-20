@@ -154,8 +154,17 @@ def main() -> int:
         region = raw[start:end]
         if '"en-GB" : {' in region:
             head = region.index('        "en-GB" : {')
-            tail = region.index("        },\n", head) + len("        },\n")
-            region = region[:head] + block(value) + region[tail:]
+            comma_end = re.search(r"(?m)^        \},\n", region[head:])
+            if comma_end:
+                tail = head + comma_end.end()
+                replacement = block(value)
+            else:
+                final_end = re.search(r"(?m)^        \}\n", region[head:])
+                if final_end is None:
+                    raise ValueError("could not find the end of the en-GB localization")
+                tail = head + final_end.end()
+                replacement = block(value).rstrip(",\n") + "\n"
+            region = region[:head] + replacement + region[tail:]
         elif '        "en" : {' in region:
             at = region.index('        "en" : {')
             closing = region.index("\n        }", at) + len("\n        }")
