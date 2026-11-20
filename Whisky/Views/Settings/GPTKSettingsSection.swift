@@ -81,7 +81,25 @@ struct GPTKSettingsSection: View {
             // that fails is reported before anything would deploy it.
             storeFailure = await Task.detached(priority: .utility) {
                 let verdict = GPTKImporter.verifyStoredPayload()
-                GPTKImporter.deployStoredPayloadIfCapable()
+                let bottles = await MainActor.run {
+                    BottleVM.shared.bottles.map { bottle in
+                        (
+                            bottle,
+                            bottle.settings.wineRuntimeIdentifier ?? WineRuntimeStore.defaultRuntimeIdentifier
+                        )
+                    }
+                }
+                var defaultRuntimeIsActive = false
+                for (bottle, identifier) in bottles {
+                    if identifier == WineRuntimeStore.defaultRuntimeIdentifier,
+                       await Wine.isWineserverRunning(for: bottle) {
+                        defaultRuntimeIsActive = true
+                        break
+                    }
+                }
+                if !defaultRuntimeIsActive {
+                    GPTKImporter.deployStoredPayloadIfCapable()
+                }
                 guard case let .failed(reason) = verdict else { return nil }
                 return reason
             }.value
@@ -119,7 +137,20 @@ struct GPTKSettingsSection: View {
 
     private func importPayload(from url: URL) {
         importing = true
-        Task.detached(priority: .userInitiated) {
+        Task { @MainActor in
+            guard !(await anyBottleHasRunningWineProcess()) else {
+                importing = false
+                importError = "Close all Champagne bottles before replacing the GPTK payload."
+                return
+            }
+
+            await importPayloadInBackground(from: url)
+        }
+    }
+
+    @MainActor
+    private func importPayloadInBackground(from url: URL) async {
+        await Task.detached(priority: .userInitiated) {
             let accessing = url.startAccessingSecurityScopedResource()
             defer {
                 if accessing {
@@ -160,21 +191,37 @@ struct GPTKSettingsSection: View {
                     refresh()
                 }
             }
+        }.value
+    }
+
+    @MainActor
+    private func anyBottleHasRunningWineProcess() async -> Bool {
+        for bottle in BottleVM.shared.bottles {
+            if await Wine.isWineserverRunning(for: bottle) { return true }
         }
+        return false
     }
 
     private func removePayload() {
-        do {
-            // Unconditional: isDeployed() reads files written late in deploy, so
-            // a half-finished deploy looks undeployed while forwarders are
-            // already swapped, and skipping cleanup would delete originals/ with
-            // the store. The removal is idempotent per file.
-            try GPTKImporter.removeDeployedPayload()
-            try GPTKImporter.removeStore()
-            storeFailure = nil
-        } catch {
-            importError = error.localizedDescription
+        importing = true
+        Task { @MainActor in
+            guard !(await anyBottleHasRunningWineProcess()) else {
+                importing = false
+                importError = "Close all Champagne bottles before removing the GPTK payload."
+                return
+            }
+            do {
+                // removeStore restores managed payloads across all runtimes
+                // before it deletes their originals backups.
+                try await Task.detached(priority: .utility) {
+                    try GPTKImporter.removeStore()
+                }.value
+                storeFailure = nil
+            } catch {
+                importError = error.localizedDescription
+            }
+            importing = false
+            refresh()
         }
-        refresh()
     }
 }

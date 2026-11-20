@@ -134,7 +134,16 @@ extension GPTKImporter {
     /// owner's: install would set the owner's `nvapi64.dll` aside as if it were
     /// Wine's placeholder and put the store's in front of another build's dylib.
     public static func ensureNVAPIBridgeInstalled() {
+        guard isRuntimeGPTKCapable() else { return }
         ensureNVAPIBridgeInstalled(inLibraryFolder: WhiskyWineInstaller.libraryFolder, usingStore: storeFolder)
+    }
+
+    /// Repairs the NVAPI bridge in a named GPTK-capable runtime.
+    public static func ensureNVAPIBridgeInstalled(forRuntime identifier: String) {
+        guard let runtime = WineRuntimeStore.runtime(identifier: identifier),
+              runtime.versionInfo.gptkCapable == true
+        else { return }
+        ensureNVAPIBridgeInstalled(inLibraryFolder: runtime.libraryFolder, usingStore: storeFolder)
     }
 
     /// Testable seam for ``ensureNVAPIBridgeInstalled()``.

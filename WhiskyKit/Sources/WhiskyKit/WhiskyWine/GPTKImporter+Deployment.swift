@@ -40,11 +40,31 @@ extension GPTKImporter {
         WhiskyWineInstaller.whiskyWineInfo()?.gptkCapable == true
     }
 
+    /// Whether a named installed runtime's Wine build can execute GPTK payloads.
+    public static func isRuntimeGPTKCapable(forRuntime identifier: String) -> Bool {
+        WineRuntimeStore.runtime(identifier: identifier)?.versionInfo.gptkCapable == true
+    }
+
     // MARK: - Deployment
 
     /// Whether the payload is deployed into the runtime tree.
     public static func isDeployed() -> Bool {
         isDeployed(inLibraryFolder: WhiskyWineInstaller.libraryFolder)
+    }
+
+    /// Whether GPTK is deployed into the Wine runtime selected by a bottle.
+    @MainActor
+    public static func isDeployed(for bottle: Bottle) -> Bool {
+        isDeployed(for: bottle.settings)
+    }
+
+    /// Whether GPTK is deployed into the runtime selected by settings.
+    public static func isDeployed(for settings: BottleSettings) -> Bool {
+        let identifier = settings.wineRuntimeIdentifier ?? WineRuntimeStore.defaultRuntimeIdentifier
+        guard let runtime = WineRuntimeStore.runtime(identifier: identifier) else {
+            return identifier == WineRuntimeStore.defaultRuntimeIdentifier && isDeployed()
+        }
+        return isDeployed(inLibraryFolder: runtime.libraryFolder)
     }
 
     /// Testable seam for ``isDeployed()``: the unix bridge for dxgi and the
@@ -62,17 +82,48 @@ extension GPTKImporter {
     /// layout: forwarders replace the Wine builtins (originals are backed up in
     /// the store), the unix bridges and `external/` are added alongside.
     ///
-    /// Callers gate this on ``isRuntimeGPTKCapable()`` — deploying to an
+    /// The runtime capability check is enforced here — deploying to an
     /// incapable runtime turns every D3DMetal launch into a crash.
     ///
     /// - Throws: ``GPTKImportError/storeNotVerified(_:)`` when the store fails
     ///   the checks an import applies (see ``verifyStoredPayload()``).
     public static func deployStoredPayload() throws {
+        guard isRuntimeGPTKCapable() else {
+            throw WineRuntimeStoreError.runtimeNotGPTKCapable(WineRuntimeStore.defaultRuntimeIdentifier)
+        }
         let store = storeFolder
         if case let .failed(reason) = storeVerdict(inStore: store, isAppleSigned: isAppleSigned(_:identifier:)) {
             throw GPTKImportError.storeNotVerified(reason)
         }
         try deploy(fromStore: store, intoLibraryFolder: WhiskyWineInstaller.libraryFolder)
+    }
+
+    /// Deploys the imported GPTK payload into a named runtime, keeping Wine's
+    /// original DLL backups isolated from every other runtime.
+    public static func deployStoredPayload(forRuntime identifier: String) throws {
+        guard identifier != WineRuntimeStore.defaultRuntimeIdentifier else {
+            try deployStoredPayload()
+            return
+        }
+        guard let runtime = WineRuntimeStore.runtime(identifier: identifier) else {
+            throw WineRuntimeStoreError.runtimeNotInstalled(identifier)
+        }
+        guard runtime.versionInfo.gptkCapable == true else {
+            throw WineRuntimeStoreError.runtimeNotGPTKCapable(identifier)
+        }
+        let store = storeFolder
+        if case let .failed(reason)? = verifyStoredPayload(
+            inStore: store,
+            libraryFolder: runtime.libraryFolder,
+            isAppleSigned: isAppleSigned(_:identifier:)
+        ) {
+            throw GPTKImportError.storeNotVerified(reason)
+        }
+        try deploy(
+            fromStore: store,
+            intoLibraryFolder: runtime.libraryFolder,
+            originalsFolder: originalsFolder(inStore: store, runtimeIdentifier: runtime.identifier)
+        )
     }
 
     /// Deploys the stored payload if there is one and the runtime can execute
@@ -96,6 +147,39 @@ extension GPTKImporter {
             intoLibraryFolder: WhiskyWineInstaller.libraryFolder,
             isAppleSigned: isAppleSigned(_:identifier:)
         )
+    }
+
+    /// Deploys the stored GPTK payload to a capable named runtime, if present.
+    @discardableResult
+    public static func deployStoredPayloadIfCapable(forRuntime identifier: String) -> Bool {
+        guard let runtime = WineRuntimeStore.runtime(identifier: identifier),
+              runtime.versionInfo.gptkCapable == true
+        else { return false }
+        let store = storeFolder
+        let verdict = verifyStoredPayload(
+            inStore: store,
+            libraryFolder: runtime.libraryFolder,
+            isAppleSigned: isAppleSigned(_:identifier:)
+        )
+        guard verdict == .verified,
+              !holdsHandPlacedPayload(inLibraryFolder: runtime.libraryFolder, usingStore: store)
+        else { return false }
+        do {
+            try deploy(
+                fromStore: store,
+                intoLibraryFolder: runtime.libraryFolder,
+                originalsFolder: originalsFolder(inStore: store, runtimeIdentifier: runtime.identifier)
+            )
+            return true
+        } catch {
+            logger.error(
+                """
+                Deploying the stored GPTK payload to runtime \(identifier, privacy: .public) failed: \
+                \(error.localizedDescription, privacy: .public)
+                """
+            )
+            return false
+        }
     }
 
     /// Testable seam for ``deployStoredPayloadIfCapable()``, past the runtime
@@ -136,6 +220,16 @@ extension GPTKImporter {
         store.appending(path: "originals").appending(path: "OriginalsVersion.plist")
     }
 
+    /// Backup location for one runtime. The existing default-runtime path is
+    /// retained so installations made by earlier Champagne versions still
+    /// restore their original Wine DLLs correctly.
+    static func originalsFolder(inStore store: URL, runtimeIdentifier: String) -> URL {
+        if runtimeIdentifier == WineRuntimeStore.defaultRuntimeIdentifier {
+            return store.appending(path: "originals")
+        }
+        return store.appending(path: "runtime-originals").appending(path: runtimeIdentifier)
+    }
+
     static func originalsRecord(inStore store: URL) -> GPTKOriginalsRecord? {
         guard let data = try? Data(contentsOf: originalsRecordURL(inStore: store)) else { return nil }
         return try? PropertyListDecoder().decode(GPTKOriginalsRecord.self, from: data)
@@ -146,13 +240,19 @@ extension GPTKImporter {
     /// engine's DLLs into this one's tree. The stamp is written before the first
     /// backup so an interrupted deploy still leaves originals remove will
     /// recognise and restore.
-    private static func prepareOriginals(inStore store: URL, forLibraryFolder folder: URL) throws {
+    private static func prepareOriginals(
+        originalsFolder originals: URL,
+        forLibraryFolder folder: URL
+    ) throws {
         let fileManager = FileManager.default
-        let originals = store.appending(path: "originals")
         let runtimeStamp = runtimeVersionStamp(inLibraryFolder: folder)
 
-        if originalsRecord(inStore: store)?.runtimeVersion != runtimeStamp {
-            try? fileManager.removeItem(at: originals)
+        if originalsRecord(inOriginalsFolder: originals)?.runtimeVersion != runtimeStamp,
+           fileManager.fileExists(atPath: originals.path(percentEncoded: false)) {
+            // Never stamp stale DLL backups with this runtime's version. If
+            // cleanup fails, abort deployment so removal cannot later restore
+            // another Wine build's originals into this runtime.
+            try fileManager.removeItem(at: originals)
         }
         try fileManager.createDirectory(at: originals, withIntermediateDirectories: true)
 
@@ -160,11 +260,24 @@ extension GPTKImporter {
         let encoder = PropertyListEncoder()
         encoder.outputFormat = .xml
         try encoder.encode(GPTKOriginalsRecord(runtimeVersion: runtimeStamp))
-            .write(to: originalsRecordURL(inStore: store))
+            .write(to: originalsRecordURL(inOriginalsFolder: originals))
+    }
+
+    static func originalsRecordURL(inOriginalsFolder folder: URL) -> URL {
+        folder.appending(path: "OriginalsVersion.plist")
+    }
+
+    static func originalsRecord(inOriginalsFolder folder: URL) -> GPTKOriginalsRecord? {
+        guard let data = try? Data(contentsOf: originalsRecordURL(inOriginalsFolder: folder)) else { return nil }
+        return try? PropertyListDecoder().decode(GPTKOriginalsRecord.self, from: data)
     }
 
     /// Testable seam for ``deployStoredPayload()``.
-    static func deploy(fromStore store: URL, intoLibraryFolder folder: URL) throws {
+    static func deploy(
+        fromStore store: URL,
+        intoLibraryFolder folder: URL,
+        originalsFolder suppliedOriginalsFolder: URL? = nil
+    ) throws {
         guard storedRecord(inStore: store) != nil else {
             throw GPTKImportError.storeEmpty
         }
@@ -173,8 +286,8 @@ extension GPTKImporter {
         let wineLib = folder.appending(path: "Wine").appending(path: "lib")
         let peDir = wineLib.appending(path: "wine").appending(path: "x86_64-windows")
         let unixDir = wineLib.appending(path: "wine").appending(path: "x86_64-unix")
-        let originals = store.appending(path: "originals")
-        try prepareOriginals(inStore: store, forLibraryFolder: folder)
+        let originals = suppliedOriginalsFolder ?? store.appending(path: "originals")
+        try prepareOriginals(originalsFolder: originals, forLibraryFolder: folder)
 
         // A previous install leaves the interposer in the d3d12 slot, where it
         // matches neither Wine's DLL nor the store's forwarder. Clear it first
@@ -241,70 +354,5 @@ extension GPTKImporter {
             atPath: dll.path(percentEncoded: false),
             andPath: storeDLL.path(percentEncoded: false)
         )
-    }
-
-    /// Removes the payload from the runtime tree and restores the backed-up
-    /// Wine originals.
-    public static func removeDeployedPayload() throws {
-        try remove(fromLibraryFolder: WhiskyWineInstaller.libraryFolder, usingStore: storeFolder)
-    }
-
-    /// Testable seam for ``removeDeployedPayload()``.
-    static func remove(fromLibraryFolder folder: URL, usingStore store: URL) throws {
-        let fileManager = FileManager.default
-        let wineLib = folder.appending(path: "Wine").appending(path: "lib")
-        let peDir = wineLib.appending(path: "wine").appending(path: "x86_64-windows")
-        let unixDir = wineLib.appending(path: "wine").appending(path: "x86_64-unix")
-        let originals = store.appending(path: "originals")
-        let storeLib = store.appending(path: "lib")
-
-        let originalsAreCurrent = originalsRecord(inStore: store)?.runtimeVersion
-            == runtimeVersionStamp(inLibraryFolder: folder)
-
-        removeMetalFXBridge(fromLibraryFolder: folder, usingStore: store)
-        // Apple's DLL goes back into the d3d12 slot before the loop reads it,
-        // or the slot still holds the interposer, fails the byte match against
-        // the store, and is skipped: the tree would keep a d3d12 that forwards
-        // to a DLL this call is about to delete.
-        removeVideoProcessor(fromLibraryFolder: folder, usingStore: store)
-        removeNVAPIBridge(fromLibraryFolder: folder, usingStore: store)
-
-        for name in forwarderDLLNames {
-            let backup = originals.appending(path: name)
-            let hasBackup = fileManager.fileExists(atPath: backup.path(percentEncoded: false))
-
-            // Backups from a replaced engine: drop them and leave the tree,
-            // which this store never deployed into, untouched.
-            guard originalsAreCurrent else {
-                if hasBackup {
-                    try fileManager.removeItem(at: backup)
-                }
-                continue
-            }
-
-            // An interrupted deploy leaves some names still holding Wine's own
-            // DLL, never backed up; deleting one loses a builtin with nothing
-            // to put back. Only what byte-matches the store came from here.
-            let deployed = peDir.appending(path: name)
-            if fileManager.fileExists(atPath: deployed.path(percentEncoded: false)) {
-                guard isGPTKForwarder(deployed, matching: storeLib) else { continue }
-                try fileManager.removeItem(at: deployed)
-            }
-            if hasBackup {
-                try fileManager.moveItem(at: backup, to: deployed)
-            }
-        }
-
-        // removeItem operates on the link itself, so this also clears a
-        // dangling symlink that fileExists (which follows links) would miss.
-        for name in unixLibraryNames {
-            try? fileManager.removeItem(at: unixDir.appending(path: name))
-        }
-
-        let external = wineLib.appending(path: "external")
-        if fileManager.fileExists(atPath: external.path(percentEncoded: false)) {
-            try fileManager.removeItem(at: external)
-        }
-        logger.info("Removed GPTK payload from the runtime tree")
     }
 }
