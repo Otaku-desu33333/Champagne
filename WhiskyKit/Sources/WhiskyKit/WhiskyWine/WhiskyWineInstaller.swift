@@ -93,7 +93,10 @@ public class WhiskyWineInstaller {
     /// Located at `~/Library/Application Support/{bundle-identifier}/`.
     public static let applicationFolder = FileManager.default.urls(
         for: .applicationSupportDirectory, in: .userDomainMask
-    )[0].appending(path: Bundle.whiskyBundleIdentifier)
+    )[0].appending(path: Bundle.champagneBundleIdentifier)
+
+    /// Cached runtime downloads and resumable partial archives.
+    public static let runtimeDownloadsFolder = applicationFolder.appending(path: "RuntimeDownloads")
 
     /// The folder containing all library files including Wine and DXVK.
     ///

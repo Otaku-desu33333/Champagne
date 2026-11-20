@@ -1,3 +1,6 @@
+Warning: truncated output (original token count: 13270)
+Total output lines: 1233
+
 // swiftlint:disable file_length
 //
 //  BottleSettings.swift
@@ -94,6 +97,7 @@ public struct BottleInfo: Codable, Equatable {
 ///
 /// Settings are organized into logical groups:
 /// - **Info**: Name, pins, and blocklist
+/// - **Runtime**: The selected Wine runtime identifier
 /// - **Wine Config**: Windows version, AVX, enhanced sync
 /// - **Metal Config**: Metal HUD, DXR, validation
 /// - **DXVK Config**: DXVK enable, async, HUD
@@ -144,6 +148,10 @@ public struct BottleSettings: Codable, Equatable {
     var fileVersion: SemanticVersion = Self.defaultFileVersion
     /// Basic bottle information (name, pins).
     private var info: BottleInfo
+    /// Stable identifier for the Wine runtime this bottle uses. `nil` keeps
+    /// existing bottles on the legacy default runtime. Set it through
+    /// ``WineRuntimeStore/select(_:for:)`` so only installed runtimes are saved.
+    public internal(set) var wineRuntimeIdentifier: String?
     /// Wine-specific configuration.
     private var wineConfig: BottleWineConfig
     /// Metal graphics settings.
@@ -176,6 +184,7 @@ public struct BottleSettings: Codable, Equatable {
     /// Creates a new BottleSettings instance with default values.
     public init() {
         self.info = BottleInfo()
+        self.wineRuntimeIdentifier = nil
         self.wineConfig = BottleWineConfig()
         self.metalConfig = BottleMetalConfig()
         self.dxvkConfig = BottleDXVKConfig()
@@ -196,6 +205,7 @@ public struct BottleSettings: Codable, Equatable {
         self.fileVersion = try container.decodeIfPresent(SemanticVersion.self, forKey: .fileVersion) ?? Self
             .defaultFileVersion
         self.info = try container.decodeIfPresent(BottleInfo.self, forKey: .info) ?? BottleInfo()
+        self.wineRuntimeIdentifier = try container.decodeIfPresent(String.self, forKey: .wineRuntimeIdentifier)
         self.wineConfig = try container
             .decodeIfPresent(BottleWineConfig.self, forKey: .wineConfig) ?? BottleWineConfig()
         self.metalConfig = try container
@@ -291,690 +301,7 @@ public struct BottleSettings: Codable, Equatable {
     ///
     /// Use this to hide unwanted executables like installers or utilities.
     public var blocklist: [URL] {
-        get { info.blocklist }
-        set { info.blocklist = newValue }
-    }
-
-    /// The synchronization mode for Wine.
-    ///
-    /// Enhanced sync modes (ESync/MSync) can improve performance for some applications
-    /// by using more efficient synchronization primitives.
-    public var enhancedSync: EnhancedSync {
-        get { wineConfig.enhancedSync }
-        set { wineConfig.enhancedSync = newValue }
-    }
-
-    /// Whether to display the Metal performance HUD overlay.
-    ///
-    /// Shows frame rate and GPU statistics during gameplay.
-    public var metalHud: Bool {
-        get { metalConfig.metalHud }
-        set { metalConfig.metalHud = newValue }
-    }
-
-    /// Whether to enable Metal GPU trace capture.
-    ///
-    /// Useful for debugging graphics issues with Xcode's GPU debugger.
-    public var metalTrace: Bool {
-        get { metalConfig.metalTrace }
-        set { metalConfig.metalTrace = newValue }
-    }
-
-    /// Whether DirectX Raytracing (DXR) support is enabled.
-    ///
-    /// Enable this for games that support ray tracing features.
-    public var dxrEnabled: Bool {
-        get { metalConfig.dxrEnabled }
-        set { metalConfig.dxrEnabled = newValue }
-    }
-
-    /// Whether Metal validation layer is enabled.
-    ///
-    /// Useful for debugging but impacts performance. Keep disabled
-    /// for normal gameplay.
-    public var metalValidation: Bool {
-        get { metalConfig.metalValidation }
-        set { metalConfig.metalValidation = newValue }
-    }
-
-    /// Whether macOS Sequoia (15.x) compatibility mode is enabled.
-    ///
-    /// Applies additional fixes for graphics and launcher issues
-    /// specific to macOS 15.x. Enable if experiencing problems.
-    public var sequoiaCompatMode: Bool {
-        get { metalConfig.sequoiaCompatMode }
-        set { metalConfig.sequoiaCompatMode = newValue }
-    }
-
-    /// Whether D3DMetal uses the Metal 4 command encoding backend.
-    ///
-    /// `D3DMDevice::MTL4OptionEnabled` checks the OS version *before* it reads
-    /// `D3DM_MTL4`, and only takes the Metal 4 path for D3D12 devices, so the
-    /// variable is inert rather than harmful on older systems and D3D11 titles.
-    public var metal4Enabled: Bool {
-        get { metalConfig.metal4Enabled }
-        set { metalConfig.metal4Enabled = newValue }
-    }
-
-    /// The graphics backend for this bottle.
-    ///
-    /// Controls which translation layer is used for Direct3D rendering.
-    /// `.recommended` resolves to a concrete backend at launch time based on GPU/OS heuristics.
-    ///
-    /// Changing it clears `launcherSwitchedBackend`: whatever changed it, the
-    /// backend is no longer the one a launcher profile left behind.
-    public var graphicsBackend: GraphicsBackend {
-        get { graphicsConfig.backend }
-        set { setBackend(newValue) }
-    }
-
-    /// Whether this bottle opts in to D3DMetal's DLSS-to-MetalFX path.
-    ///
-    /// Takes effect only under D3DMetal, and only for a game that has DLSS
-    /// switched on in its own settings: the bridge implements the DLSS entry
-    /// points, so a game that never asks for DLSS never reaches MetalFX.
-    public var metalFX: Bool {
-        get { graphicsConfig.metalFX }
-        set { graphicsConfig.metalFX = newValue }
-    }
-
-    /// Whether Whisky publishes the program this bottle launched to Discord.
-    ///
-    /// Announces every program, including the ones with no Discord support of
-    /// their own, but announces them as Whisky. Independent of
-    /// ``discordBridge``, which carries a game's own presence instead.
-    public var discordPresence: Bool {
-        get { discordConfig.presence }
-        set { discordConfig.presence = newValue }
-    }
-
-    /// Whether games in this bottle may reach the host's Discord client.
-    ///
-    /// Serves the named pipe a Windows game expects and relays it to Discord,
-    /// so a game that publishes rich presence arrives with its own artwork and
-    /// state. A game that publishes nothing is unaffected.
-    public var discordBridge: Bool {
-        get { discordConfig.bridge }
-        set { discordConfig.bridge = newValue }
-    }
-
-    /// Whether games in this bottle may turn on DLSS frame generation.
-    ///
-    /// Separate from ``metalFX`` because the two features fail differently.
-    /// Upscaling is measured good; frame generation took the whole login
-    /// session down on the machine it was tested on. See
-    /// ``BottleGraphicsConfig/frameGeneration``.
-    public var frameGeneration: Bool {
-        get { graphicsConfig.frameGeneration }
-        set { graphicsConfig.frameGeneration = newValue }
-    }
-
-    /// Whether DXVK is the active graphics backend.
-    ///
-    /// This property now derives from ``graphicsBackend``. Setting it to `true`
-    /// switches the backend to `.dxvk`; setting to `false` switches to `.recommended`.
-    public var dxvk: Bool {
-        get { graphicsConfig.backend == .dxvk }
-        set { setBackend(newValue ? .dxvk : .recommended) }
-    }
-
-    private mutating func setBackend(_ backend: GraphicsBackend) {
-        if backend != graphicsConfig.backend {
-            launcherConfig.backendSwitchedByLauncher = false
-        }
-        graphicsConfig.backend = backend
-    }
-
-    /// Whether DXVK async shader compilation is enabled.
-    ///
-    /// Reduces stuttering during gameplay by compiling shaders
-    /// asynchronously, at the cost of potential visual glitches.
-    public var dxvkAsync: Bool {
-        get { dxvkConfig.dxvkAsync }
-        set { dxvkConfig.dxvkAsync = newValue }
-    }
-
-    /// The DXVK HUD display mode.
-    ///
-    /// Controls what information is shown in the DXVK overlay.
-    public var dxvkHud: DXVKHUD {
-        get { dxvkConfig.dxvkHud }
-        set { dxvkConfig.dxvkHud = newValue }
-    }
-
-    // MARK: - Audio settings
-
-    /// The audio driver mode for this bottle.
-    ///
-    /// Controls which audio driver Wine uses. `.auto` lets Wine choose
-    /// the best driver (CoreAudio on macOS). Audio driver configuration
-    /// is applied via the Wine registry, not environment variables.
-    public var audioDriver: AudioDriverMode {
-        get { audioConfig.audioDriver }
-        set { audioConfig.audioDriver = newValue }
-    }
-
-    /// The audio latency preset for this bottle.
-    ///
-    /// Controls the DirectSound `HelBuflen` buffer size. Larger buffers
-    /// improve stability with Bluetooth and USB audio at the cost of
-    /// increased latency. Applied via the Wine registry.
-    public var audioLatencyPreset: AudioLatencyPreset {
-        get { audioConfig.latencyPreset }
-        set { audioConfig.latencyPreset = newValue }
-    }
-
-    /// The output device routing mode for this bottle.
-    ///
-    /// Controls whether Wine follows the macOS default output device
-    /// or is pinned to a specific device by name.
-    public var outputDeviceMode: OutputDeviceMode {
-        get { audioConfig.outputDeviceMode }
-        set { audioConfig.outputDeviceMode = newValue }
-    }
-
-    /// The name of the pinned audio output device, if any.
-    ///
-    /// Only meaningful when ``outputDeviceMode`` is `.pinned`.
-    /// Set to `nil` to clear the pin and follow the system default.
-    public var pinnedDeviceName: String? {
-        get { audioConfig.pinnedDeviceName }
-        set { audioConfig.pinnedDeviceName = newValue }
-    }
-
-    // MARK: - Display settings
-
-    /// Whether Wine's virtual desktop mode is enabled for this bottle.
-    ///
-    /// When enabled, Wine runs in a windowed virtual desktop instead of
-    /// directly managing individual windows. The resolution is controlled
-    /// by ``resolutionPreset`` and ``customResolutionWidth``/``customResolutionHeight``.
-    public var virtualDesktopEnabled: Bool {
-        get { displayConfig.virtualDesktopEnabled }
-        set { displayConfig.virtualDesktopEnabled = newValue }
-    }
-
-    /// The display resolution preset for the virtual desktop.
-    ///
-    /// Controls the virtual desktop resolution when ``virtualDesktopEnabled`` is `true`.
-    /// Use `.custom` to specify arbitrary dimensions via ``customResolutionWidth``
-    /// and ``customResolutionHeight``.
-    public var resolutionPreset: ResolutionPreset {
-        get { displayConfig.resolutionPreset }
-        set { displayConfig.resolutionPreset = newValue }
-    }
-
-    /// The custom virtual desktop width in pixels.
-    ///
-    /// Only used when ``resolutionPreset`` is `.custom`.
-    public var customResolutionWidth: Int {
-        get { displayConfig.customWidth }
-        set { displayConfig.customWidth = newValue }
-    }
-
-    /// The custom virtual desktop height in pixels.
-    ///
-    /// Only used when ``resolutionPreset`` is `.custom`.
-    public var customResolutionHeight: Int {
-        get { displayConfig.customHeight }
-        set { displayConfig.customHeight = newValue }
-    }
-
-    // MARK: - Performance settings
-
-    /// Whether shader caching is enabled.
-    ///
-    /// Shader caching reduces stuttering after the first run
-    /// by storing compiled shaders on disk.
-    public var shaderCacheEnabled: Bool {
-        get { performanceConfig.shaderCacheEnabled }
-        set { performanceConfig.shaderCacheEnabled = newValue }
-    }
-
-    /// Whether Visual C++ Redistributable is installed in this bottle.
-    ///
-    /// Track this to avoid redundant installation prompts.
-    public var vcRedistInstalled: Bool {
-        get { performanceConfig.vcRedistInstalled }
-        set { performanceConfig.vcRedistInstalled = newValue }
-    }
-
-    /// Whether App Nap should be disabled for Wine processes.
-    ///
-    /// When enabled, prevents macOS from throttling Wine processes
-    /// when the application is in the background, improving game performance.
-    public var disableAppNap: Bool {
-        get { performanceConfig.disableAppNap }
-        set { performanceConfig.disableAppNap = newValue }
-    }
-
-    // MARK: - Launcher compatibility settings
-
-    /// Whether launcher compatibility mode is enabled.
-    ///
-    /// When enabled, applies launcher-specific optimizations for Steam,
-    /// Rockstar, EA App, Epic Games, and other platforms (frankea/Whisky#41).
-    public var launcherCompatibilityMode: Bool {
-        get { launcherConfig.compatibilityMode }
-        set { launcherConfig.compatibilityMode = newValue }
-    }
-
-    /// The launcher detection mode (auto or manual).
-    ///
-    /// - **Auto**: Detects launcher from executable path automatically
-    /// - **Manual**: Uses explicitly selected launcher type
-    public var launcherMode: LauncherMode {
-        get { launcherConfig.launcherMode }
-        set { launcherConfig.launcherMode = newValue }
-    }
-
-    /// Manually selected or auto-detected launcher type.
-    ///
-    /// Used when `launcherCompatibilityMode` is enabled to apply
-    /// launcher-specific environment variables and settings.
-    public var detectedLauncher: LauncherType? {
-        get { launcherConfig.detectedLauncher }
-        set { launcherConfig.detectedLauncher = newValue }
-    }
-
-    /// Locale override for launcher compatibility.
-    ///
-    /// Auto keeps the launcher preset's locale (US English for EA App, Epic
-    /// Games, Battle.net, and Rockstar) or the Mac's when the preset sets none,
-    /// as Steam's does (#330). Any other choice wins over the preset.
-    public var launcherLocale: Locales {
-        get { launcherConfig.launcherLocale }
-        set { launcherConfig.launcherLocale = newValue }
-    }
-
-    /// Whether to enable GPU spoofing for launcher compatibility.
-    ///
-    /// Reports high-end GPU capabilities to pass launcher checks.
-    /// Fixes EA App black screen and "GPU not supported" errors.
-    public var gpuSpoofing: Bool {
-        get { launcherConfig.gpuSpoofing }
-        set { launcherConfig.gpuSpoofing = newValue }
-    }
-
-    /// GPU vendor to spoof when GPU spoofing is enabled.
-    ///
-    /// NVIDIA (default) provides best compatibility across launchers.
-    public var gpuVendor: GPUVendor {
-        get { launcherConfig.gpuVendor }
-        set { launcherConfig.gpuVendor = newValue }
-    }
-
-    /// Network timeout in milliseconds for launcher downloads.
-    ///
-    /// Addresses Steam download stalls and connection timeouts.
-    public var networkTimeout: Int {
-        get { launcherConfig.networkTimeout }
-        set { launcherConfig.networkTimeout = newValue }
-    }
-
-    /// Whether to force DXVK in a bottle whose launcher requires it.
-    ///
-    /// Only Rockstar Games Launcher does (``LauncherType/requiresDXVK``): it
-    /// cannot render its logo screen without DXVK. When on, detecting it
-    /// switches the bottle to DXVK, and every launch in the bottle deploys
-    /// DXVK and (in launcher compatibility mode) gets its DLL overrides,
-    /// whatever ``graphicsBackend`` says.
-    /// Every launcher already resolves to DXVK under `.recommended`.
-    public var autoEnableDXVK: Bool {
-        get { launcherConfig.autoEnableDXVK }
-        set { launcherConfig.autoEnableDXVK = newValue }
-    }
-
-    /// The last ``LauncherBackendMigration`` this bottle has been through.
-    var launcherBackendMigration: Int {
-        get { launcherConfig.backendMigration }
-        set { launcherConfig.backendMigration = newValue }
-    }
-
-    /// Whether the graphics settings say that ``LauncherBackendMigration`` put
-    /// this bottle back on Recommended. Cleared once the user has seen it.
-    public var launcherBackendResetNotice: Bool {
-        get { launcherConfig.backendResetNotice }
-        set { launcherConfig.backendResetNotice = newValue }
-    }
-
-    /// The last ``LauncherLocaleMigration`` this bottle has been through.
-    var launcherLocaleMigration: Int {
-        get { launcherConfig.localeMigration }
-        set { launcherConfig.localeMigration = newValue }
-    }
-
-    /// Whether a launcher profile, not the user, switched this bottle from
-    /// Recommended to DXVK. Set after the switch, since changing the backend
-    /// clears it.
-    var launcherSwitchedBackend: Bool {
-        get { launcherConfig.backendSwitchedByLauncher }
-        set { launcherConfig.backendSwitchedByLauncher = newValue }
-    }
-
-    // MARK: - Controller and input settings
-
-    /// Whether controller compatibility mode is enabled.
-    ///
-    /// When enabled, applies workarounds for common controller detection
-    /// and mapping issues on macOS (frankea/Whisky#42).
-    public var controllerCompatibilityMode: Bool {
-        get { inputConfig.controllerCompatibilityMode }
-        set { inputConfig.controllerCompatibilityMode = newValue }
-    }
-
-    /// Whether to disable HIDAPI for joystick input.
-    ///
-    /// Forces SDL to use alternative backends which may improve
-    /// detection for some controllers.
-    public var disableHIDAPI: Bool {
-        get { inputConfig.disableHIDAPI }
-        set { inputConfig.disableHIDAPI = newValue }
-    }
-
-    /// Whether to allow joystick events when app is in background.
-    ///
-    /// Enables controller input even when Wine window doesn't have focus.
-    public var allowBackgroundEvents: Bool {
-        get { inputConfig.allowBackgroundEvents }
-        set { inputConfig.allowBackgroundEvents = newValue }
-    }
-
-    /// Whether to disable SDL to XInput mapping conversion.
-    ///
-    /// May help PlayStation and Switch controllers show correct button mappings.
-    public var disableControllerMapping: Bool {
-        get { inputConfig.disableControllerMapping }
-        set { inputConfig.disableControllerMapping = newValue }
-    }
-
-    /// Whether to use native button labels instead of XInput layout.
-    ///
-    /// When true, sets `SDL_GAMECONTROLLER_USE_BUTTON_LABELS=1` so physical
-    /// button positions are used instead of XInput logical layout.
-    public var useButtonLabels: Bool {
-        get { inputConfig.useButtonLabels }
-        set { inputConfig.useButtonLabels = newValue }
-    }
-
-    /// Whether the macOS Command key is mapped to Windows Ctrl inside Wine.
-    ///
-    /// When true, Wine's Mac driver registry receives `LeftCommandIsCtrl=Y`
-    /// and `RightCommandIsCtrl=Y` so common shortcuts (Cmd+A/C/V/S) register
-    /// inside Wine apps as their Windows equivalents.
-    public var commandActsAsControl: Bool {
-        get { inputConfig.commandActsAsControl }
-        set { inputConfig.commandActsAsControl = newValue }
-    }
-
-    // MARK: - Custom DLL overrides
-
-    /// User-defined DLL overrides for this bottle.
-    ///
-    /// These overrides are composed with managed overrides (from DXVK toggle
-    /// and launcher presets) by ``DLLOverrideResolver``. Bottle custom overrides
-    /// take precedence over managed overrides per-DLL.
-    public var dllOverrides: [DLLOverrideEntry] {
-        get { customDLLOverrides }
-        set { customDLLOverrides = newValue }
-    }
-
-    // MARK: - Cleanup and clipboard settings
-
-    /// The clipboard handling policy for this bottle.
-    ///
-    /// Controls how clipboard content is checked before launching Wine programs.
-    /// See ``ClipboardPolicy`` for available options.
-    public var clipboardPolicy: ClipboardPolicy {
-        get { cleanupConfig.clipboardPolicy }
-        set { cleanupConfig.clipboardPolicy = newValue }
-    }
-
-    /// The size threshold in bytes for considering clipboard content "large".
-    ///
-    /// Content above this threshold triggers the configured clipboard policy.
-    /// Defaults to ``ClipboardManager/largeContentThreshold`` (10 KB).
-    public var clipboardThreshold: Int {
-        get { cleanupConfig.clipboardThreshold }
-        set { cleanupConfig.clipboardThreshold = newValue }
-    }
-
-    /// The kill-on-quit policy for Wine processes in this bottle.
-    ///
-    /// Overrides the global `killOnTerminate` setting on a per-bottle basis.
-    /// See ``KillOnQuitPolicy`` for available options.
-    public var killOnQuit: KillOnQuitPolicy {
-        get { cleanupConfig.killOnQuit }
-        set { cleanupConfig.killOnQuit = newValue }
-    }
-
-    /// The policy for handling running processes when navigating away from this bottle.
-    ///
-    /// Controls whether a confirmation dialog is shown when the user switches
-    /// to a different bottle while Wine processes are still running.
-    /// See ``CloseWithProcessesPolicy`` for available options.
-    public var closeWithProcessesPolicy: CloseWithProcessesPolicy {
-        get { cleanupConfig.closeWithProcessesPolicy }
-        set { cleanupConfig.closeWithProcessesPolicy = newValue }
-    }
-
-    /// Loads bottle settings from a metadata plist file.
-    ///
-    /// This method handles version migration and validation. If the settings
-    /// file doesn't exist or has an incompatible version, default settings
-    /// are created.
-    ///
-    /// - Parameter metadataURL: The URL to the Metadata.plist file.
-    /// - Returns: The loaded or newly created settings.
-    /// - Throws: An error if the file cannot be read or decoded.
-    @discardableResult
-    public static func decode(from metadataURL: URL) throws -> BottleSettings {
-        guard FileManager.default.fileExists(atPath: metadataURL.path(percentEncoded: false)) else {
-            // File doesn't exist - create default settings and save them
-            let settings = BottleSettings()
-            try settings.encode(to: metadataURL)
-            return settings
-        }
-
-        // File exists - read and decode it
-        let decoder = PropertyListDecoder()
-        let data = try Data(contentsOf: metadataURL)
-        var settings = try decoder.decode(BottleSettings.self, from: data)
-
-        guard settings.fileVersion == BottleSettings.defaultFileVersion else {
-            Logger.wineKit.warning("Invalid file version `\(settings.fileVersion, privacy: .public)`")
-            // Preserve the original before defaults overwrite it, so an unexpected file version
-            // (which may carry recoverable user data) is not silently destroyed.
-            quarantineCorruptedFile(at: metadataURL)
-            settings = BottleSettings()
-            try settings.encode(to: metadataURL)
-            return settings
-        }
-
-        if settings.wineConfig.wineVersion != BottleWineConfig().wineVersion {
-            Logger.wineKit.warning(
-                "Bottle has a different wine version `\(settings.wineConfig.wineVersion, privacy: .public)`"
-            )
-            settings.wineConfig.wineVersion = BottleWineConfig().wineVersion
-            do {
-                try settings.encode(to: metadataURL)
-            } catch {
-                // The file decoded fine; only the version-stamp rewrite failed. Propagating
-                // would make the caller quarantine a healthy file and reset it to defaults,
-                // so keep the valid settings and let the stamp retry on the next load.
-                Logger.wineKit.error(
-                    "Failed to update wine version stamp: \(String(describing: error), privacy: .public)"
-                )
-            }
-            return settings
-        }
-
-        return settings
-    }
-
-    /// Saves the settings to a plist file.
-    ///
-    /// - Parameter metadataUrl: The URL where settings should be saved.
-    /// - Throws: An error if the settings cannot be encoded or written.
-    func encode(to metadataUrl: URL) throws {
-        let encoder = PropertyListEncoder()
-        encoder.outputFormat = .xml
-        let data = try encoder.encode(self)
-        // Atomic so a crash mid-write can't leave a truncated Metadata.plist behind.
-        try data.write(to: metadataUrl, options: .atomic)
-    }
-
-    /// Moves an unreadable settings file aside before defaults overwrite it, preserving the
-    /// original for diagnosis instead of destroying it (silent data loss).
-    ///
-    /// The file is renamed to a `<filename>.corrupt-<timestamp>-<nonce>` sibling. The move is
-    /// best-effort: if the file does not exist there is nothing to preserve, and if the move
-    /// itself fails the error is logged and the caller proceeds to write defaults anyway.
-    ///
-    /// - Parameter metadataURL: The URL of the settings file to quarantine.
-    static func quarantineCorruptedFile(at metadataURL: URL) {
-        let fileManager = FileManager.default
-        // Only quarantine when there is actually a file to preserve.
-        guard fileManager.fileExists(atPath: metadataURL.path(percentEncoded: false)) else { return }
-
-        // Filename-safe timestamp (no colons/spaces): e.g. 2026-06-10T14-30-05Z.
-        let formatter = ISO8601DateFormatter()
-        formatter.timeZone = TimeZone(identifier: "UTC")
-        let rawTimestamp = formatter.string(from: Date())
-        let timestamp = rawTimestamp.replacingOccurrences(of: ":", with: "-")
-        // Short random suffix so two quarantines within the same second can't collide
-        // (moveItem refuses to overwrite an existing destination, losing the second file).
-        let nonce = UUID().uuidString.prefix(8)
-        let quarantineURL = metadataURL
-            .deletingLastPathComponent()
-            .appending(path: "\(metadataURL.lastPathComponent).corrupt-\(timestamp)-\(nonce)")
-
-        do {
-            try fileManager.moveItem(at: metadataURL, to: quarantineURL)
-            Logger.wineKit.error(
-                """
-                Quarantined unreadable settings file `\(metadataURL.path(percentEncoded: false), privacy: .public)` \
-                to `\(quarantineURL.path(percentEncoded: false), privacy: .public)` before writing defaults
-                """
-            )
-        } catch {
-            Logger.wineKit.error(
-                """
-                Failed to quarantine unreadable settings file \
-                `\(metadataURL.path(percentEncoded: false), privacy: .public)`: \
-                \(String(describing: error), privacy: .public); proceeding to write defaults
-                """
-            )
-        }
-    }
-
-    // MARK: - EnvironmentBuilder Layer Populators
-
-    // swiftlint:disable cyclomatic_complexity function_body_length
-
-    /// Populates the ``EnvironmentLayer/bottleManaged`` layer with settings-derived env vars.
-    ///
-    /// This method replaces the direct dict mutation in the deprecated ``environmentVariables(wineEnv:)``.
-    /// DLL override entries are returned separately for composition by ``DLLOverrideResolver``.
-    ///
-    /// - Parameters:
-    ///   - builder: The environment builder to populate.
-    ///   - resolvedBackend: The concrete backend to use when the bottle is set to
-    ///     `.recommended`. Defaults to `nil`, which resolves via
-    ///     ``GraphicsBackendResolver`` and therefore depends on the machine's
-    ///     installed runtime — tests pin an explicit value so the suite answers
-    ///     the same everywhere.
-    ///   - builtinD3D12IsD3DMetal: Whether the runtime's builtin `d3d12` is
-    ///     D3DMetal's, which decides whether the DXVK and DXMT presets turn it
-    ///     off. Defaults to whether the GPTK payload is deployed.
-    /// - Returns: Managed DLL override entries with their sources for the DLLOverrideResolver.
-    public func populateBottleManagedLayer(
-        builder: inout EnvironmentBuilder,
-        resolvedBackend: GraphicsBackend? = nil,
-        builtinD3D12IsD3DMetal: Bool = GPTKImporter.isDeployed()
-    ) -> [(entry: DLLOverrideEntry, source: DLLOverrideSource)] {
-        var managedDLLOverrides: [(entry: DLLOverrideEntry, source: DLLOverrideSource)] = []
-
-        // Resolve the graphics backend (`.recommended` -> concrete backend)
-        let resolvedBackend = if graphicsBackend == .recommended {
-            resolvedBackend ?? GraphicsBackendResolver.resolve()
-        } else {
-            graphicsBackend
-        }
-
-        // Backend-conditional env vars and DLL overrides
-        switch resolvedBackend {
-        case .d3dMetal, .recommended:
-            // Wine answers KMTQAITYPE_WDDM_2_7_CAPS, the query behind "hardware
-            // accelerated GPU scheduling", only when this says d3dmetal, and
-            // returns STATUS_NOT_IMPLEMENTED otherwise. NVIDIA Streamline
-            // refuses DLSS frame generation on that answer, so this variable is
-            // the whole frame generation switch. The only other reader wants
-            // the value "wined3d" alongside CX_LIBVULKAN, so this is inert for
-            // it.
-            if frameGeneration {
-                builder.set("CX_ACTIVE_GRAPHICS_BACKEND", "d3dmetal", layer: .bottleManaged)
-            }
-            // The DLL placement that actually gates the DLSS-to-MetalFX path
-            // happens in `Wine.applyMetalFX` at launch; this is the opt-in.
-            if metalFX {
-                builder.set("D3DM_ENABLE_METALFX", "1", layer: .bottleManaged)
-            }
-
-            // `D3DMDevice::MTL4OptionEnabled` checks the OS version before it
-            // reads this and only takes the Metal 4 path for D3D12 devices, so
-            // the variable is inert rather than harmful everywhere else.
-            if metal4Enabled {
-                builder.set("D3DM_MTL4", "1", layer: .bottleManaged)
-            }
-
-        case .dxvk:
-            // DXVK: DLL overrides + env vars
-            for entry in DLLOverrideResolver.dxvkPreset(builtinD3D12IsD3DMetal: builtinD3D12IsD3DMetal) {
-                managedDLLOverrides.append((entry: entry, source: .dxvk))
-            }
-            switch dxvkHud {
-            case .full:
-                builder.set("DXVK_HUD", "full", layer: .bottleManaged)
-            case .partial:
-                builder.set("DXVK_HUD", "devinfo,fps,frametimes", layer: .bottleManaged)
-            case .fps:
-                builder.set("DXVK_HUD", "fps", layer: .bottleManaged)
-            case .off:
-                break
-            }
-            if dxvkAsync {
-                builder.set("DXVK_ASYNC", "1", layer: .bottleManaged)
-            }
-
-        case .dxmt:
-            // DXMT: native overrides for the D3D11 trio plus the builtin
-            // winemetal bridge. No env vars in v1; the file placement happens
-            // in `Wine.enableDXMT` at launch.
-            for entry in DLLOverrideResolver.dxmtPreset(builtinD3D12IsD3DMetal: builtinD3D12IsD3DMetal) {
-                managedDLLOverrides.append((entry: entry, source: .dxmt))
-            }
-
-        case .wined3d:
-            // Disable D3DMetal, forcing Wine's OpenGL-based wined3d path
-            builder.set("WINED3DMETAL", "0", layer: .bottleManaged)
-        }
-
-        // Enhanced sync mode
-        switch enhancedSync {
-        case .none:
-            // On macOS 15.4+, WINEESYNC is required for stability
-            if MacOSVersion.current < .sequoia15_4 {
-                builder.remove("WINEESYNC", layer: .bottleManaged)
-                builder.remove("WINEMSYNC", layer: .bottleManaged)
-            } else {
-                // Ensure a stable default on newer macOS versions:
-                // enable ESYNC and clear any conflicting MSYNC setting.
-                builder.set("WINEESYNC", "1", layer: .bottleManaged)
-                builder.remove("WINEMSYNC", layer: .bottleManaged)
-            }
-        case .esync:
-            builder.set("WINEESYNC", "1", layer: .bottleManaged)
+        get …7270 tokens truncated…builder.set("WINEESYNC", "1", layer: .bottleManaged)
         case .msync:
             builder.set("WINEMSYNC", "1", layer: .bottleManaged)
             // D3DM detects ESYNC and changes behaviour accordingly
@@ -1038,9 +365,10 @@ public struct BottleSettings: Codable, Equatable {
     /// - Returns: Launcher-required DLL override entries with their sources.
     public func populateLauncherManagedLayer(
         builder: inout EnvironmentBuilder,
-        builtinD3D12IsD3DMetal: Bool = GPTKImporter.isDeployed()
+        builtinD3D12IsD3DMetal: Bool? = nil
     ) -> [(entry: DLLOverrideEntry, source: DLLOverrideSource)] {
         var launcherDLLOverrides: [(entry: DLLOverrideEntry, source: DLLOverrideSource)] = []
+        let builtinD3D12IsD3DMetal = builtinD3D12IsD3DMetal ?? GPTKImporter.isDeployed(for: self)
 
         guard launcherCompatibilityMode else { return launcherDLLOverrides }
 
@@ -1183,8 +511,16 @@ public struct BottleSettings: Codable, Equatable {
         var builder = EnvironmentBuilder()
 
         // Call layer populators
-        let managedOverrides = populateBottleManagedLayer(builder: &builder)
-        let launcherOverrides = populateLauncherManagedLayer(builder: &builder)
+        let builtinD3D12IsD3DMetal = GPTKImporter.isDeployed(for: self)
+        let managedOverrides = populateBottleManagedLayer(
+            builder: &builder,
+            resolvedBackend: GraphicsBackendResolver.resolve(for: self),
+            builtinD3D12IsD3DMetal: builtinD3D12IsD3DMetal
+        )
+        let launcherOverrides = populateLauncherManagedLayer(
+            builder: &builder,
+            builtinD3D12IsD3DMetal: builtinD3D12IsD3DMetal
+        )
         populateInputCompatibilityLayer(builder: &builder)
 
         // Resolve and merge

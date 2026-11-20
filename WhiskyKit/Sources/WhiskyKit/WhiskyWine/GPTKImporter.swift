@@ -100,7 +100,7 @@ public struct GPTKStoreRecord: Codable, Equatable, Sendable {
 /// process that runs D3DMetal code. Only runtimes that advertise
 /// `gptkCapable` in their version plist get the payload deployed.
 public enum GPTKImporter {
-    static let logger = Logger(subsystem: Bundle.whiskyBundleIdentifier, category: "GPTKImporter")
+    static let logger = Logger(subsystem: Bundle.champagneBundleIdentifier, category: "GPTKImporter")
 
     /// The D3D forwarders Apple ships, and the only ones deployed. GPTK 4 has
     /// no d3d9 forwarder.
@@ -296,7 +296,15 @@ public enum GPTKImporter {
     /// the framework.
     @discardableResult
     public static func importPayload(_ payload: GPTKPayload) throws -> GPTKStoreRecord {
-        try importPayload(payload, intoStore: storeFolder, revalidatingWith: isAppleSigned(_:identifier:))
+        try importPayload(
+            payload,
+            intoStore: storeFolder,
+            revalidatingWith: isAppleSigned(_:identifier:),
+            beforeReplacingStoredPayload: {
+                guard storedRecord(inStore: storeFolder) != nil else { return }
+                try removeDeployedPayloadsFromAllRuntimes()
+            }
+        )
     }
 
     /// Testable seam for ``importPayload(_:)``.
@@ -308,7 +316,8 @@ public enum GPTKImporter {
     static func importPayload(
         _ payload: GPTKPayload,
         intoStore store: URL,
-        revalidatingWith isAppleSigned: ((_ code: URL, _ identifier: String) -> Bool)? = nil
+        revalidatingWith isAppleSigned: ((_ code: URL, _ identifier: String) -> Bool)? = nil,
+        beforeReplacingStoredPayload: (() throws -> Void)? = nil
     ) throws -> GPTKStoreRecord {
         let fileManager = FileManager.default
         let libDest = store.appending(path: "lib")
@@ -326,6 +335,7 @@ public enum GPTKImporter {
             if let isAppleSigned {
                 version = try validatePayload(at: staging, isAppleSigned: isAppleSigned).version
             }
+            try beforeReplacingStoredPayload?()
             // attributesOfItem does not follow a link, so a lib left behind as
             // a dangling link is replaced too; fileExists would not see it.
             if (try? fileManager.attributesOfItem(atPath: libDest.path(percentEncoded: false))) != nil {
@@ -364,31 +374,5 @@ public enum GPTKImporter {
                 withDestinationPath: unixLinkDestination
             )
         }
-    }
-
-    /// The stored payload's record, or `nil` when the store is absent or its
-    /// payload is incomplete.
-    public static func storedRecord() -> GPTKStoreRecord? {
-        storedRecord(inStore: storeFolder)
-    }
-
-    /// Testable seam for ``storedRecord()``.
-    static func storedRecord(inStore store: URL) -> GPTKStoreRecord? {
-        guard let data = try? Data(contentsOf: recordURL(inStore: store)),
-              let record = try? PropertyListDecoder().decode(GPTKStoreRecord.self, from: data),
-              isPayloadRoot(store.appending(path: "lib"))
-        else { return nil }
-        return record
-    }
-
-    /// Deletes the store, payload and record together.
-    public static func removeStore() throws {
-        let store = storeFolder
-        guard FileManager.default.fileExists(atPath: store.path(percentEncoded: false)) else { return }
-        try FileManager.default.removeItem(at: store)
-    }
-
-    static func recordURL(inStore store: URL) -> URL {
-        store.appending(path: "D3DMetalVersion.plist")
     }
 }
