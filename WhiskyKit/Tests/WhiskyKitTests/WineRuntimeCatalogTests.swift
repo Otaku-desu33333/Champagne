@@ -21,7 +21,7 @@ import Testing
 @testable import WhiskyKit
 
 struct WineRuntimeCatalogTests {
-    @Test("Only official Wine runtime archives with a published SHA-256 enter the catalog")
+    @Test("Only allowlisted Wine runtime archives with a published SHA-256 enter the catalog")
     func catalogFiltersReleaseAssets() throws {
         let digest = String(repeating: "a", count: 64)
         let data = try JSONSerialization.data(withJSONObject: runtimeReleases(digest: digest))

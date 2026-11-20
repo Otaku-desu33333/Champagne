@@ -46,10 +46,11 @@ public struct WineRuntimeCatalogRelease: Equatable, Identifiable, Sendable {
     }
 }
 
-/// Errors returned by the official Wine runtime catalog.
+/// Errors returned by the Wine runtime catalog.
 public enum WineRuntimeCatalogError: LocalizedError, Equatable {
     case invalidResponse
     case httpStatus(Int)
+    case allRepositoriesUnavailable
 
     public var errorDescription: String? {
         switch self {
@@ -62,6 +63,11 @@ public enum WineRuntimeCatalogError: LocalizedError, Equatable {
             String(
                 localized: "runtime.catalog.error.httpStatus",
                 defaultValue: "The runtime catalog returned HTTP status \(statusCode)."
+            )
+        case .allRepositoriesUnavailable:
+            String(
+                localized: "runtime.catalog.error.allRepositoriesUnavailable",
+                defaultValue: "The runtime repositories could not be reached. Check your connection and try again."
             )
         }
     }
@@ -77,21 +83,12 @@ public enum WineRuntimeCatalog {
 
     /// Fetches installable Wine Libraries releases from the allowlisted repositories.
     public static func releases() async throws -> [WineRuntimeCatalogRelease] {
-        let repositoryData = try await withThrowingTaskGroup(of: (String, Data).self) { group in
-            for repository in trustedRepositories {
-                group.addTask {
-                    try await releaseData(from: repository)
-                }
-            }
+        async let communityData = try? await releaseData(from: communityRepository)
+        async let champagneData = try? await releaseData(from: champagneRepository)
+        let repositoryData = await [communityData, champagneData].compactMap { $0 }
 
-            var results: [(String, Data)] = []
-            for try await result in group {
-                results.append(result)
-            }
-            return results.sorted { lhs, rhs in
-                (trustedRepositories.firstIndex(of: lhs.0) ?? .max)
-                    < (trustedRepositories.firstIndex(of: rhs.0) ?? .max)
-            }
+        guard !repositoryData.isEmpty else {
+            throw WineRuntimeCatalogError.allRepositoriesUnavailable
         }
 
         return try repositoryData.flatMap { repository, data in

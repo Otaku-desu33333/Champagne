@@ -94,6 +94,7 @@ public struct BottleInfo: Codable, Equatable {
 ///
 /// Settings are organized into logical groups:
 /// - **Info**: Name, pins, and blocklist
+/// - **Runtime**: The selected Wine runtime identifier
 /// - **Wine Config**: Windows version, AVX, enhanced sync
 /// - **Metal Config**: Metal HUD, DXR, validation
 /// - **DXVK Config**: DXVK enable, async, HUD
@@ -144,6 +145,10 @@ public struct BottleSettings: Codable, Equatable {
     var fileVersion: SemanticVersion = Self.defaultFileVersion
     /// Basic bottle information (name, pins).
     private var info: BottleInfo
+    /// Stable identifier for the Wine runtime this bottle uses. `nil` keeps
+    /// existing bottles on the legacy default runtime. Set it through
+    /// ``WineRuntimeStore/select(_:for:)`` so only installed runtimes are saved.
+    public internal(set) var wineRuntimeIdentifier: String?
     /// Wine-specific configuration.
     private var wineConfig: BottleWineConfig
     /// Metal graphics settings.
@@ -176,6 +181,7 @@ public struct BottleSettings: Codable, Equatable {
     /// Creates a new BottleSettings instance with default values.
     public init() {
         self.info = BottleInfo()
+        self.wineRuntimeIdentifier = nil
         self.wineConfig = BottleWineConfig()
         self.metalConfig = BottleMetalConfig()
         self.dxvkConfig = BottleDXVKConfig()
@@ -196,6 +202,7 @@ public struct BottleSettings: Codable, Equatable {
         self.fileVersion = try container.decodeIfPresent(SemanticVersion.self, forKey: .fileVersion) ?? Self
             .defaultFileVersion
         self.info = try container.decodeIfPresent(BottleInfo.self, forKey: .info) ?? BottleInfo()
+        self.wineRuntimeIdentifier = try container.decodeIfPresent(String.self, forKey: .wineRuntimeIdentifier)
         self.wineConfig = try container
             .decodeIfPresent(BottleWineConfig.self, forKey: .wineConfig) ?? BottleWineConfig()
         self.metalConfig = try container
@@ -891,13 +898,14 @@ public struct BottleSettings: Codable, Equatable {
     public func populateBottleManagedLayer(
         builder: inout EnvironmentBuilder,
         resolvedBackend: GraphicsBackend? = nil,
-        builtinD3D12IsD3DMetal: Bool = GPTKImporter.isDeployed()
+        builtinD3D12IsD3DMetal: Bool? = nil
     ) -> [(entry: DLLOverrideEntry, source: DLLOverrideSource)] {
         var managedDLLOverrides: [(entry: DLLOverrideEntry, source: DLLOverrideSource)] = []
+        let builtinD3D12IsD3DMetal = builtinD3D12IsD3DMetal ?? GPTKImporter.isDeployed(for: self)
 
         // Resolve the graphics backend (`.recommended` -> concrete backend)
         let resolvedBackend = if graphicsBackend == .recommended {
-            resolvedBackend ?? GraphicsBackendResolver.resolve()
+            resolvedBackend ?? GraphicsBackendResolver.resolve(for: self)
         } else {
             graphicsBackend
         }
@@ -1038,9 +1046,10 @@ public struct BottleSettings: Codable, Equatable {
     /// - Returns: Launcher-required DLL override entries with their sources.
     public func populateLauncherManagedLayer(
         builder: inout EnvironmentBuilder,
-        builtinD3D12IsD3DMetal: Bool = GPTKImporter.isDeployed()
+        builtinD3D12IsD3DMetal: Bool? = nil
     ) -> [(entry: DLLOverrideEntry, source: DLLOverrideSource)] {
         var launcherDLLOverrides: [(entry: DLLOverrideEntry, source: DLLOverrideSource)] = []
+        let builtinD3D12IsD3DMetal = builtinD3D12IsD3DMetal ?? GPTKImporter.isDeployed(for: self)
 
         guard launcherCompatibilityMode else { return launcherDLLOverrides }
 
@@ -1183,8 +1192,16 @@ public struct BottleSettings: Codable, Equatable {
         var builder = EnvironmentBuilder()
 
         // Call layer populators
-        let managedOverrides = populateBottleManagedLayer(builder: &builder)
-        let launcherOverrides = populateLauncherManagedLayer(builder: &builder)
+        let builtinD3D12IsD3DMetal = GPTKImporter.isDeployed(for: self)
+        let managedOverrides = populateBottleManagedLayer(
+            builder: &builder,
+            resolvedBackend: GraphicsBackendResolver.resolve(for: self),
+            builtinD3D12IsD3DMetal: builtinD3D12IsD3DMetal
+        )
+        let launcherOverrides = populateLauncherManagedLayer(
+            builder: &builder,
+            builtinD3D12IsD3DMetal: builtinD3D12IsD3DMetal
+        )
         populateInputCompatibilityLayer(builder: &builder)
 
         // Resolve and merge

@@ -235,6 +235,21 @@ final class WhiskyWineInstallerTests: XCTestCase {
         }
     }
 
+    func testBackendAvailabilityUsesPayloadsFromTheRuntimeRecord() throws {
+        let runtimeFolder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: runtimeFolder) }
+        let framework = runtimeFolder.appending(path: "Wine/lib/external/D3DMetal.framework")
+        try FileManager.default.createDirectory(at: framework, withIntermediateDirectories: true)
+        let runtime = InstalledWineRuntime(
+            identifier: "gptk-runtime",
+            libraryFolder: runtimeFolder,
+            versionInfo: WhiskyWineVersion(version: SemanticVersion(3, 1, 1), dxmtVersion: "0.80")
+        )
+
+        XCTAssertTrue(WhiskyWineInstaller.backendAvailability(.d3dMetal, for: runtime))
+        XCTAssertFalse(WhiskyWineInstaller.backendAvailability(.dxmt, for: runtime))
+    }
+
     func testRuntimeNotPresentWhenFolderEmpty() {
         let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         XCTAssertFalse(WhiskyWineInstaller.isRuntimePresent(inLibraryFolder: tempDir))

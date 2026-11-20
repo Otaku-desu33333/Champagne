@@ -22,7 +22,7 @@ import Foundation
 import os
 import SemanticVersion
 
-private let logger = Logger(subsystem: Bundle.whiskyBundleIdentifier, category: "WhiskyWineInstaller")
+private let logger = Logger(subsystem: Bundle.champagneBundleIdentifier, category: "WhiskyWineInstaller")
 
 /// Errors thrown by ``WhiskyWineInstaller/install(from:)``.
 public enum WhiskyWineInstallError: LocalizedError, Equatable {
@@ -93,7 +93,10 @@ public class WhiskyWineInstaller {
     /// Located at `~/Library/Application Support/{bundle-identifier}/`.
     public static let applicationFolder = FileManager.default.urls(
         for: .applicationSupportDirectory, in: .userDomainMask
-    )[0].appending(path: Bundle.whiskyBundleIdentifier)
+    )[0].appending(path: Bundle.champagneBundleIdentifier)
+
+    /// Cached runtime downloads and resumable partial archives.
+    public static let runtimeDownloadsFolder = applicationFolder.appending(path: "RuntimeDownloads")
 
     /// The folder containing all library files including Wine and DXVK.
     ///
@@ -411,6 +414,34 @@ public class WhiskyWineInstaller {
             runtimeInfo: whiskyWineInfo(),
             d3dMetalInstalled: isD3DMetalInstalled(),
             dxmtRuntimeNative: Wine.isDXMTRuntimeNative()
+        )
+    }
+
+    /// Whether `backend` is available in the runtime selected by a bottle.
+    /// A bottle on a named runtime must not inherit payload availability from
+    /// the legacy default runtime.
+    public static func isBackendAvailable(_ backend: GraphicsBackend, for settings: BottleSettings) -> Bool {
+        let identifier = settings.wineRuntimeIdentifier ?? WineRuntimeStore.defaultRuntimeIdentifier
+        guard let runtime = WineRuntimeStore.runtime(identifier: identifier) else {
+            return backendAvailability(
+                backend,
+                runtimeInfo: nil,
+                d3dMetalInstalled: false,
+                dxmtRuntimeNative: false
+            )
+        }
+        return backendAvailability(backend, for: runtime)
+    }
+
+    /// Testable availability check for an individual runtime record.
+    static func backendAvailability(_ backend: GraphicsBackend, for runtime: InstalledWineRuntime) -> Bool {
+        return backendAvailability(
+            backend,
+            runtimeInfo: runtime.versionInfo,
+            d3dMetalInstalled: isD3DMetalPresent(inLibraryFolder: runtime.libraryFolder),
+            dxmtRuntimeNative: Wine.isDXMTRuntimeNative(
+                payloadRoot: runtime.libraryFolder.appending(path: "DXMT")
+            )
         )
     }
 
