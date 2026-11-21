@@ -63,7 +63,7 @@ struct WhiskyApp: App {
 
     init() {
         updaterController = SPUStandardUpdaterController(
-            startingUpdater: true,
+            startingUpdater: SparkleUpdateConfiguration.isConfigured,
             updaterDelegate: nil,
             userDriverDelegate: SparkleUpdaterDelegate.shared
         )
@@ -225,7 +225,9 @@ struct WhiskyApp: App {
         .handlesExternalEvents(matching: ["*"])
         .commands {
             CommandGroup(after: .appInfo) {
-                SparkleView(updater: updaterController.updater)
+                if SparkleUpdateConfiguration.isConfigured {
+                    SparkleView(updater: updaterController.updater)
+                }
             }
             CommandGroup(before: .systemServices) {
                 Divider()

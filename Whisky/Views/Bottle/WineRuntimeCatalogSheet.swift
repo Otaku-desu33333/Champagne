@@ -25,6 +25,7 @@ struct WineRuntimeCatalogSheet: View {
     @State private var isLoading = true
     @State private var loadingError: String?
     @State private var installingTag: String?
+    @State private var installProgress: Double?
     @State private var installError: String?
     @State private var installTask: Task<Void, Never>?
 
@@ -116,8 +117,14 @@ struct WineRuntimeCatalogSheet: View {
                 Link("runtime.catalog.releaseNotes", destination: release.releaseURL)
                 Spacer()
                 if installingTag == release.id {
-                    ProgressView()
-                        .controlSize(.small)
+                    if let installProgress {
+                        ProgressView(value: installProgress)
+                            .controlSize(.small)
+                            .frame(width: 80)
+                    } else {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
                     Text("runtime.catalog.downloading")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -147,6 +154,7 @@ struct WineRuntimeCatalogSheet: View {
     private func install(_ release: WineRuntimeCatalogRelease) {
         let identifier = nextIdentifier(for: release)
         installingTag = release.id
+        installProgress = nil
         installError = nil
         installTask = Task { @MainActor in
             defer {
@@ -154,7 +162,11 @@ struct WineRuntimeCatalogSheet: View {
                 installTask = nil
             }
             do {
-                _ = try await WineRuntimeCatalog.install(release, identifier: identifier)
+                _ = try await WineRuntimeCatalog.install(release, identifier: identifier) { progress in
+                    guard let expectedBytes = progress.expectedBytes, expectedBytes > 0 else { return }
+                    let fraction = min(1, Double(progress.bytesOnDisk) / Double(expectedBytes))
+                    Task { @MainActor in installProgress = fraction }
+                }
                 onInstalled(release, identifier)
                 dismiss()
             } catch is CancellationError {
@@ -166,12 +178,14 @@ struct WineRuntimeCatalogSheet: View {
     }
 
     private func nextIdentifier(for release: WineRuntimeCatalogRelease) -> String {
-        let installed = Set(WineRuntimeStore.installedRuntimes().map(\.identifier))
         let base = release.suggestedIdentifier
         var identifier = base
         var suffix = 2
-        while installed.contains(identifier) {
-            identifier = "\(base)-\(suffix)"
+        while WineRuntimeStore.isIdentifierOccupied(identifier) {
+            let suffixText = "-\(suffix)"
+            let prefix = String(base.prefix(max(1, 64 - suffixText.count)))
+                .trimmingCharacters(in: CharacterSet(charactersIn: "-_."))
+            identifier = "\(prefix)\(suffixText)"
             suffix += 1
         }
         return identifier

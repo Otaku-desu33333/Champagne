@@ -137,7 +137,8 @@ class Winetricks {
     @MainActor
     private static func writeTerminalScript(command: String, bottle: Bottle, resourcesURL: URL) throws -> URL {
         let winetricksPath = resourcesURL.appending(path: "winetricks").path(percentEncoded: false)
-        let pathValue = "\(WhiskyWineInstaller.binFolder.path):\(resourcesURL.path(percentEncoded: false))"
+        let wineBinFolder = try Wine.wineBinFolder(for: bottle)
+        let pathValue = "\(wineBinFolder.path(percentEncoded: false)):\(resourcesURL.path(percentEncoded: false))"
         let scriptContent = [
             "#!/bin/bash",
             "export PATH=\(ShellQuoting.quoted(pathValue)):\"$PATH\"",

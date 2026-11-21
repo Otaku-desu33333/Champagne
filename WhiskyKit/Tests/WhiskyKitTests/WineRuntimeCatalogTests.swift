@@ -77,6 +77,41 @@ struct WineRuntimeCatalogTests {
         )
     }
 
+    @Test("The catalog keeps one repository's releases when another repository fails")
+    func repositoryFailureDoesNotHideAvailableReleases() throws {
+        let digest = String(repeating: "d", count: 64)
+        let data = try JSONSerialization.data(withJSONObject: runtimeReleases(digest: digest))
+        let releases = try WineRuntimeCatalog.decodeResponses([
+            (WineRuntimeCatalog.communityRepository, .success(data)),
+            (WineRuntimeCatalog.champagneRepository, .failure(WineRuntimeCatalogError.httpStatus(403)))
+        ])
+
+        #expect(releases.count == 1)
+        #expect(releases.first?.repository == WineRuntimeCatalog.communityRepository)
+    }
+
+    @Test("A failed repository is not shown as an empty catalog")
+    func repositoryFailureSurfacesWhenNoReleaseExists() throws {
+        let empty = Data("[]".utf8)
+        #expect(throws: WineRuntimeCatalogError.httpStatus(403)) {
+            try WineRuntimeCatalog.decodeResponses([
+                (WineRuntimeCatalog.champagneRepository, .success(empty)),
+                (WineRuntimeCatalog.communityRepository, .failure(WineRuntimeCatalogError.httpStatus(403)))
+            ])
+        }
+    }
+
+    @Test("Invalid catalog install identifiers fail before a download starts")
+    func catalogInstallRejectsIdentifierBeforeNetworkRequest() async throws {
+        let digest = String(repeating: "e", count: 64)
+        let data = try JSONSerialization.data(withJSONObject: runtimeReleases(digest: digest))
+        let release = try #require(WineRuntimeCatalog.decodeReleases(from: data).first)
+
+        await #expect(throws: WineRuntimeStoreError.invalidIdentifier("../unsafe")) {
+            try await WineRuntimeCatalog.install(release, identifier: "../unsafe")
+        }
+    }
+
     private func runtimeReleases(digest: String) -> [[String: Any]] {
         let repository = "https://github.com/frankea/Whisky"
         return [

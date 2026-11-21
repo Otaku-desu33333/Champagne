@@ -22,14 +22,15 @@ public enum DistributionConfig {
     /// Base URL for GitHub Pages distribution
     public static let baseURL = "https://otaku-desu33333.github.io/Champagne"
 
-    /// URL for the WhiskyWine version plist file
-    public static let versionPlistURL = "\(baseURL)/WhiskyWineVersion.plist"
+    /// Public Wine runtime manifest maintained with the verified upstream archives.
+    public static let versionPlistURL = "https://raw.githubusercontent.com/frankea/Whisky/main/dist/pages/WhiskyWineVersion.plist"
 
-    /// Base URL for GitHub Releases downloads
-    public static let releasesBaseURL = "https://github.com/Otaku-desu33333/Champagne/releases/download"
+    /// Base URL for the Wine Libraries archives whose digest the manifest publishes.
+    public static let releasesBaseURL = "https://github.com/frankea/Whisky/releases/download"
 
-    /// URL for the Sparkle appcast feed
-    public static let appcastURL = "\(baseURL)/appcast.xml"
+    /// Canonical Champagne appcast location. Sparkle remains disabled until the
+    /// app contains its signing public key and releases are published.
+    public static let appcastURL = "https://raw.githubusercontent.com/Otaku-desu33333/Champagne/main/appcast.xml"
 
     /// Constructs the download URL for Wine Libraries from GitHub Releases
     /// - Parameter version: The version string (e.g., "2.5.0")

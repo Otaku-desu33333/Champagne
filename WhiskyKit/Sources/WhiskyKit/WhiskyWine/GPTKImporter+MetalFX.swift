@@ -198,8 +198,10 @@ extension GPTKImporter {
     /// backup, which would also put the store's bridge in front of another
     /// build's dylib.
     public static func ensureMetalFXBridgeInstalled() {
-        guard isRuntimeGPTKCapable() else { return }
-        ensureMetalFXBridgeInstalled(inLibraryFolder: WhiskyWineInstaller.libraryFolder, usingStore: storeFolder)
+        withFileOperationLock {
+            guard isRuntimeGPTKCapable() else { return }
+            ensureMetalFXBridgeInstalled(inLibraryFolder: WhiskyWineInstaller.libraryFolder, usingStore: storeFolder)
+        }
     }
 
     /// Repairs the MetalFX bridge in a named GPTK-capable runtime.
@@ -209,10 +211,12 @@ extension GPTKImporter {
     /// same launch-time repair after an app upgrade. Ineligible runtimes are
     /// left untouched.
     public static func ensureMetalFXBridgeInstalled(forRuntime identifier: String) {
-        guard let runtime = WineRuntimeStore.runtime(identifier: identifier),
-              runtime.versionInfo.gptkCapable == true
-        else { return }
-        ensureMetalFXBridgeInstalled(inLibraryFolder: runtime.libraryFolder, usingStore: storeFolder)
+        withFileOperationLock {
+            guard let runtime = WineRuntimeStore.runtime(identifier: identifier),
+                  runtime.versionInfo.gptkCapable == true
+            else { return }
+            ensureMetalFXBridgeInstalled(inLibraryFolder: runtime.libraryFolder, usingStore: storeFolder)
+        }
     }
 
     /// Testable seam for ``ensureMetalFXBridgeInstalled()``.

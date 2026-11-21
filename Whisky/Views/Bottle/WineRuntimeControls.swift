@@ -34,7 +34,7 @@ extension WineConfigSection {
                 }
                 .labelsHidden()
                 .pickerStyle(.menu)
-                .disabled(importingWineRuntime || selectingWineRuntime || availableWineRuntimes.isEmpty)
+                .disabled(bottle.inFlight || importingWineRuntime || selectingWineRuntime || availableWineRuntimes.isEmpty)
             }
 
             if let selected = availableWineRuntimes.first(where: { $0.identifier == selectedRuntimeIdentifier }) {

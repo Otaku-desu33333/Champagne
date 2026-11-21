@@ -70,13 +70,17 @@ struct SettingsView: View {
                 }
             }
             Section("settings.updates") {
-                Toggle("settings.toggle.whisky.updates", isOn: $whiskyUpdate)
+                if SparkleUpdateConfiguration.isConfigured {
+                    Toggle("settings.toggle.whisky.updates", isOn: $whiskyUpdate)
+                }
                 Toggle("settings.toggle.whiskywine.updates", isOn: $checkWhiskyWineUpdates)
             }
             GPTKSettingsSection()
-            Section("settings.privacy") {
-                Toggle("settings.toggle.telemetry", isOn: telemetryOptIn)
-                    .help("setup.telemetry.consent.help")
+            if Telemetry.isConfigured {
+                Section("settings.privacy") {
+                    Toggle("settings.toggle.telemetry", isOn: telemetryOptIn)
+                        .help("setup.telemetry.consent.help")
+                }
             }
         }
         .formStyle(.grouped)

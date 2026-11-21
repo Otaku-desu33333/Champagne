@@ -19,6 +19,23 @@
 import Sparkle
 import SwiftUI
 
+enum SparkleUpdateConfiguration {
+    /// Sparkle is usable only when its HTTPS feed and EdDSA public key are set.
+    /// A missing key means this build cannot verify updates and must not start
+    /// scheduled checks or expose a nonfunctional update command.
+    static var isConfigured: Bool {
+        guard let feedString = Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String,
+              let feed = URL(string: feedString),
+              feed.scheme?.lowercased() == "https",
+              feed.host != nil,
+              let keyString = Bundle.main.object(forInfoDictionaryKey: "SUPublicEDKey") as? String,
+              let keyData = Data(base64Encoded: keyString.trimmingCharacters(in: .whitespacesAndNewlines)),
+              keyData.count == 32
+        else { return false }
+        return true
+    }
+}
+
 struct SparkleView: View {
     @ObservedObject private var checkForUpdatesViewModel: CheckForUpdatesViewModel
     @ObservedObject private var updaterDelegate = SparkleUpdaterDelegate.shared

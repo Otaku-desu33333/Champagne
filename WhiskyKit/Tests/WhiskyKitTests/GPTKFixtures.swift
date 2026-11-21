@@ -169,11 +169,17 @@ func makePayload(
 /// Assembles a minimal Wine runtime tree with builtin-marked d3d DLLs.
 func makeRuntime(at libraryFolder: URL, marker: String = "wine original") throws {
     let fileManager = FileManager.default
+    let wineBin = libraryFolder.appending(path: "Wine").appending(path: "bin")
     let wineLib = libraryFolder.appending(path: "Wine").appending(path: "lib")
     let peDir = wineLib.appending(path: "wine").appending(path: "x86_64-windows")
     let unixDir = wineLib.appending(path: "wine").appending(path: "x86_64-unix")
     try fileManager.createDirectory(at: peDir, withIntermediateDirectories: true)
     try fileManager.createDirectory(at: unixDir, withIntermediateDirectories: true)
+    try fileManager.createDirectory(at: wineBin, withIntermediateDirectories: true)
+    for name in ["wine64", "wineserver"] {
+        try Data("\(name) \(marker)".utf8).write(to: wineBin.appending(path: name))
+    }
+    try writeRuntimeVersion(at: libraryFolder, 4, 0, 0)
     for name in ["d3d10.dll", "d3d11.dll", "d3d12.dll", "dxgi.dll"] {
         var wineBuiltin = fakePE(builtin: true)
         wineBuiltin.append(Data(marker.utf8))
@@ -230,7 +236,8 @@ func makePartialDeploy(store: URL, runtime: URL, runtimeVersion: String) throws 
 
     let encoder = PropertyListEncoder()
     encoder.outputFormat = .xml
-    try encoder.encode(GPTKOriginalsRecord(runtimeVersion: runtimeVersion))
+    let stamp = GPTKImporter.runtimeVersionStamp(inLibraryFolder: runtime) ?? runtimeVersion
+    try encoder.encode(GPTKOriginalsRecord(runtimeVersion: stamp))
         .write(to: GPTKImporter.originalsRecordURL(inStore: store))
 
     for name in ["d3d10.dll", "d3d12.dll"] {

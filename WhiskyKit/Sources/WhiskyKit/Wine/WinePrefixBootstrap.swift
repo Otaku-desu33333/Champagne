@@ -112,12 +112,19 @@ public extension Wine {
     ///   or an error if Wine cannot be run.
     @MainActor
     static func bootstrapPrefix(bottle: Bottle) async throws {
-        guard WhiskyWineInstaller.isWhiskyWineInstalled() else {
+        let runtimeIdentifier = bottle.settings.wineRuntimeIdentifier ?? WineRuntimeStore.defaultRuntimeIdentifier
+        let runtime = WineRuntimeStore.runtime(identifier: runtimeIdentifier)
+        guard runtimeIdentifier == WineRuntimeStore.defaultRuntimeIdentifier
+            ? WhiskyWineInstaller.isWhiskyWineInstalled()
+            : runtime != nil
+        else {
             throw WinePrefixBootstrapError.runtimeMissing
         }
 
         try await changeWinVersion(bottle: bottle, win: bottle.settings.windowsVersion)
-        if let version = try? await wineVersion(), let semantic = SemanticVersion(version) {
+        if let runtime {
+            bottle.settings.wineVersion = runtime.versionInfo.version
+        } else if let version = try? await wineVersion(), let semantic = SemanticVersion(version) {
             bottle.settings.wineVersion = semantic
         }
         BottleFontBootstrap.copySystemFonts(toPrefix: bottle.url)

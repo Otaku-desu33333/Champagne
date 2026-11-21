@@ -46,6 +46,7 @@ public enum WineRuntimeStoreError: LocalizedError, Equatable {
     case defaultRuntimeIsReserved
     case runtimeAlreadyExists(String)
     case runtimeNotInstalled(String)
+    case runtimeSelectionLocked
     case runtimeNotGPTKCapable(String)
     case archiveDigestMismatch(actual: String)
     case archiveUnreadable
@@ -72,6 +73,11 @@ public enum WineRuntimeStoreError: LocalizedError, Equatable {
             String(
                 localized: "runtime.store.notInstalled",
                 defaultValue: "Runtime ‘\(identifier)’ is not installed. Install it or choose another."
+            )
+        case .runtimeSelectionLocked:
+            String(
+                localized: "runtime.store.selectionLocked",
+                defaultValue: "The Wine runtime cannot be changed while this bottle is busy. Try again when it is idle."
             )
         case let .runtimeNotGPTKCapable(identifier):
             String(
@@ -124,15 +130,26 @@ public enum WineRuntimeStore {
             installed.append(runtime)
         }
 
-        guard let entries = try? FileManager.default.contentsOfDirectory(
-            at: runtimesDirectory,
-            includingPropertiesForKeys: [.isDirectoryKey],
-            options: [.skipsHiddenFiles]
-        )
-        else {
-            return installed
-        }
+        installed += installedNamedRuntimes(inRuntimesDirectory: runtimesDirectory)
 
+        return installed.sorted { lhs, rhs in
+            if lhs.identifier == defaultRuntimeIdentifier { return true }
+            if rhs.identifier == defaultRuntimeIdentifier { return false }
+            return lhs.identifier.localizedStandardCompare(rhs.identifier) == .orderedAscending
+        }
+    }
+
+    /// Lists only complete named runtimes under a real runtime root.
+    static func installedNamedRuntimes(inRuntimesDirectory runtimeRoot: URL) -> [InstalledWineRuntime] {
+        guard isRealDirectory(runtimeRoot),
+              let entries = try? FileManager.default.contentsOfDirectory(
+                  at: runtimeRoot,
+                  includingPropertiesForKeys: [.isDirectoryKey],
+                  options: [.skipsHiddenFiles]
+              )
+        else { return [] }
+
+        var installed: [InstalledWineRuntime] = []
         for entry in entries {
             let identifier = entry.lastPathComponent
             guard (try? validatedIdentifier(identifier)) != nil,
@@ -140,12 +157,7 @@ public enum WineRuntimeStore {
             else { continue }
             installed.append(runtime)
         }
-
-        return installed.sorted { lhs, rhs in
-            if lhs.identifier == defaultRuntimeIdentifier { return true }
-            if rhs.identifier == defaultRuntimeIdentifier { return false }
-            return lhs.identifier.localizedStandardCompare(rhs.identifier) == .orderedAscending
-        }
+        return installed
     }
 
     /// Returns an installed runtime by stable identifier.
@@ -184,6 +196,7 @@ public enum WineRuntimeStore {
     /// legacy default runtime used by existing bottles.
     @MainActor
     public static func select(_ identifier: String?, for bottle: Bottle) throws {
+        guard !bottle.inFlight else { throw WineRuntimeStoreError.runtimeSelectionLocked }
         let selectedIdentifier = identifier ?? defaultRuntimeIdentifier
         guard libraryFolder(identifier: selectedIdentifier) != nil else {
             throw WineRuntimeStoreError.invalidIdentifier(selectedIdentifier)
@@ -217,6 +230,21 @@ public enum WineRuntimeStore {
         identifier: String,
         expectedSHA256: String? = nil
     ) throws -> InstalledWineRuntime {
+        try install(
+            tarball: tarball,
+            identifier: identifier,
+            expectedSHA256: expectedSHA256,
+            inRuntimesDirectory: runtimesDirectory
+        )
+    }
+
+    /// Isolated runtime-root seam for install validation and recovery tests.
+    static func install(
+        tarball: URL,
+        identifier: String,
+        expectedSHA256: String? = nil,
+        inRuntimesDirectory runtimeRoot: URL
+    ) throws -> InstalledWineRuntime {
         let identifier = try validatedIdentifier(identifier)
         guard identifier != defaultRuntimeIdentifier else {
             throw WineRuntimeStoreError.defaultRuntimeIsReserved
@@ -238,13 +266,19 @@ public enum WineRuntimeStore {
             }
         }
 
-        try fileManager.createDirectory(at: runtimesDirectory, withIntermediateDirectories: true)
-        let destination = runtimesDirectory.appending(path: identifier)
-        guard !fileManager.fileExists(atPath: destination.path(percentEncoded: false)) else {
+        guard !isIdentifierOccupied(identifier, inRuntimesDirectory: runtimeRoot) else {
             throw WineRuntimeStoreError.runtimeAlreadyExists(identifier)
         }
+        if pathExistsIncludingSymlinks(runtimeRoot), !isRealDirectory(runtimeRoot) {
+            throw CocoaError(.fileReadCorruptFile, userInfo: [NSFilePathErrorKey: runtimeRoot.path])
+        }
+        try fileManager.createDirectory(at: runtimeRoot, withIntermediateDirectories: true)
+        guard isRealDirectory(runtimeRoot) else {
+            throw CocoaError(.fileReadCorruptFile, userInfo: [NSFilePathErrorKey: runtimeRoot.path])
+        }
+        let destination = runtimeRoot.appending(path: identifier)
 
-        let staging = runtimesDirectory.appending(path: ".install-\(UUID().uuidString)")
+        let staging = runtimeRoot.appending(path: ".install-\(UUID().uuidString)")
         defer { try? fileManager.removeItem(at: staging) }
 
         try WhiskyWineInstaller.install(tarball: tarball, into: staging)
@@ -312,7 +346,29 @@ public enum WineRuntimeStore {
             && requiredDLLs.allSatisfy { fileManager.fileExists(atPath: $0.path(percentEncoded: false)) }
     }
 
-    private static func validatedIdentifier(_ identifier: String) throws -> String {
+    /// Whether an identifier is invalid or already has a runtime directory on disk.
+    public static func isIdentifierOccupied(_ identifier: String) -> Bool {
+        isIdentifierOccupied(identifier, inRuntimesDirectory: runtimesDirectory)
+    }
+
+    static func isIdentifierOccupied(_ identifier: String, inRuntimesDirectory runtimeRoot: URL) -> Bool {
+        guard (try? validatedIdentifier(identifier)) != nil else { return true }
+        if identifier == defaultRuntimeIdentifier {
+            return pathExistsIncludingSymlinks(WhiskyWineInstaller.libraryFolder)
+        }
+        if pathExistsIncludingSymlinks(runtimeRoot), !isRealDirectory(runtimeRoot) {
+            return true
+        }
+        return pathExistsIncludingSymlinks(runtimeRoot.appending(path: identifier))
+    }
+
+    private static func pathExistsIncludingSymlinks(_ url: URL) -> Bool {
+        let path = url.path(percentEncoded: false)
+        return FileManager.default.fileExists(atPath: path)
+            || (try? FileManager.default.destinationOfSymbolicLink(atPath: path)) != nil
+    }
+
+    static func validatedIdentifier(_ identifier: String) throws -> String {
         let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyz0123456789._-")
         let firstScalar = identifier.unicodeScalars.first
         let startsAlphanumeric = firstScalar.map {

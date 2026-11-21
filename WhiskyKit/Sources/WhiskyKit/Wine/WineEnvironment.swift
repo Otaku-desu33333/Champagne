@@ -221,7 +221,7 @@ extension Wine {
 
         // Graphics backend override: replaces bottle-level backend entirely
         if let backend = overrides.graphicsBackend {
-        let resolved = if backend == .recommended {
+            let resolved = if backend == .recommended {
                 recommendedBackend ?? GraphicsBackendResolver.resolve()
             } else {
                 backend

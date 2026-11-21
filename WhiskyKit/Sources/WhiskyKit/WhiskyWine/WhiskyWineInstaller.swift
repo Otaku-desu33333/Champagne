@@ -320,6 +320,8 @@ public class WhiskyWineInstaller {
         // The GPTK store sits outside Libraries so it survives engine updates;
         // a full uninstall is the one case where it should not.
         try? FileManager.default.removeItem(at: GPTKImporter.storeFolder)
+        try? FileManager.default.removeItem(at: WineRuntimeStore.runtimesDirectory)
+        try? FileManager.default.removeItem(at: runtimeDownloadsFolder)
 
         // BottleData.plist registers bottle paths; remove it so a reinstall
         // starts with no orphaned entries pointing at deleted directories.

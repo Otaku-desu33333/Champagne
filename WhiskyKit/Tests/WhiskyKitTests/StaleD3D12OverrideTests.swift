@@ -87,6 +87,7 @@ final class StaleD3D12OverrideTests {
             programOverrides: plan, overridesApplyToDescendants: true,
             descendantExecutables: ["PlayRDR2.exe", "RDR2.exe"],
             recommendedBackend: payload ? .d3dMetal : .dxvk, builtinD3D12IsD3DMetal: payload,
+            backendAvailability: { _ in true },
             overrideWriter: recorder.writer, importer: recorder.importer
         )
     }
@@ -147,6 +148,7 @@ final class StaleD3D12OverrideTests {
 
         _ = try await Wine.prepareProgramLaunch(
             at: game, bottle: bottle, recommendedBackend: .d3dMetal, builtinD3D12IsD3DMetal: true,
+            backendAvailability: { _ in true },
             overrideWriter: recorder.writer, importer: recorder.importer
         )
 

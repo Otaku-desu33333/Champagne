@@ -299,6 +299,45 @@ final class ProgramLaunchPreparationTests {
         ])
     }
 
+    @Test("An unavailable saved backend falls back for this launch without changing the bottle")
+    func unavailableBackendFallsBackForLaunch() async throws {
+        let bottle = try makeBottle()
+        bottle.settings.graphicsBackend = .dxmt
+        let programURL = try makeExecutable("Games/Game.exe", in: bottle)
+        let recorder = RegistryRecorder()
+
+        let launch = try await Wine.prepareProgramLaunch(
+            at: programURL,
+            bottle: bottle,
+            recommendedBackend: .wined3d,
+            builtinD3D12IsD3DMetal: false,
+            backendAvailability: { $0 == .wined3d },
+            overrideWriter: recorder.writer,
+            importer: recorder.importer
+        )
+
+        #expect(bottle.settings.graphicsBackend == .dxmt)
+        #expect(launch.environment["WINED3DMETAL"] == "0")
+        #expect(launch.wineBinary == Wine.wineBinary)
+        #expect(recorder.overrides(for: .program("Game.exe"))?["d3d11"] == "b")
+    }
+
+    @Test("A prepared terminal command keeps the runtime executable captured at preparation")
+    func preparedCommandUsesCapturedRuntime() throws {
+        let bottle = try makeBottle()
+        let selectedBinary = tempRoot.appending(path: "Runtimes/wine-4.8.3/Wine/bin/wine64")
+        let launch = Wine.PreparedLaunch(
+            environment: ["WINEPREFIX": bottle.url.path],
+            arguments: ["start", "/unix", bottle.url.appending(path: "Game.exe").path],
+            wineBinary: selectedBinary
+        )
+
+        let command = Wine.generateRunCommand(for: launch, bottle: bottle)
+
+        #expect(command.contains(selectedBinary.path.esc))
+        #expect(!command.contains(Wine.wineBinary.path.esc))
+    }
+
     @Test("A prepared launch prints exactly as prepared, without rebuilding its environment")
     func preparedLaunchPrintsVerbatim() {
         let launch = Wine.PreparedLaunch(

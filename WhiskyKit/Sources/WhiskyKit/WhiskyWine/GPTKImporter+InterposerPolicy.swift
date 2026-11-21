@@ -109,23 +109,27 @@ extension GPTKImporter {
     ///   deploy leaves behind. A slot holding anything else was changed on
     ///   purpose.
     public static func ensureVideoProcessorInstalled(bottles: [URL]) {
-        guard isRuntimeGPTKCapable() else { return }
-        ensureVideoProcessorInstalled(
-            bottles: bottles, inLibraryFolder: WhiskyWineInstaller.libraryFolder, usingStore: storeFolder
-        )
+        withFileOperationLock {
+            guard isRuntimeGPTKCapable() else { return }
+            ensureVideoProcessorInstalled(
+                bottles: bottles, inLibraryFolder: WhiskyWineInstaller.libraryFolder, usingStore: storeFolder
+            )
+        }
     }
 
     /// Repairs the video processor interposer in a named GPTK-capable runtime
     /// and seeds only the bottles assigned to that runtime.
     public static func ensureVideoProcessorInstalled(bottles: [URL], forRuntime identifier: String) {
-        guard let runtime = WineRuntimeStore.runtime(identifier: identifier),
-              runtime.versionInfo.gptkCapable == true
-        else { return }
-        ensureVideoProcessorInstalled(
-            bottles: bottles,
-            inLibraryFolder: runtime.libraryFolder,
-            usingStore: storeFolder
-        )
+        withFileOperationLock {
+            guard let runtime = WineRuntimeStore.runtime(identifier: identifier),
+                  runtime.versionInfo.gptkCapable == true
+            else { return }
+            ensureVideoProcessorInstalled(
+                bottles: bottles,
+                inLibraryFolder: runtime.libraryFolder,
+                usingStore: storeFolder
+            )
+        }
     }
 
     /// Testable seam for ``ensureVideoProcessorInstalled(bottles:)``.

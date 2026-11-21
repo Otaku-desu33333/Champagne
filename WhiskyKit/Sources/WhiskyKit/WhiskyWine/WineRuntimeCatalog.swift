@@ -18,6 +18,27 @@
 
 import Foundation
 
+private actor WineRuntimeCatalogInstallGate {
+    private var isLocked = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func acquire() async {
+        guard isLocked else {
+            isLocked = true
+            return
+        }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    func release() {
+        if waiters.isEmpty {
+            isLocked = false
+        } else {
+            waiters.removeFirst().resume()
+        }
+    }
+}
+
 /// A verified runtime archive published in a trusted Wine runtime repository.
 public struct WineRuntimeCatalogRelease: Equatable, Identifiable, Sendable {
     /// The release title shown in the runtime picker.
@@ -80,20 +101,46 @@ public enum WineRuntimeCatalog {
     static let communityRepository = "frankea/Whisky"
     static let champagneRepository = "Otaku-desu33333/Champagne"
     private static let trustedRepositories = [communityRepository, champagneRepository]
+    private static let installGate = WineRuntimeCatalogInstallGate()
 
     /// Fetches installable Wine Libraries releases from the allowlisted repositories.
     public static func releases() async throws -> [WineRuntimeCatalogRelease] {
-        async let communityData = try? await releaseData(from: communityRepository)
-        async let champagneData = try? await releaseData(from: champagneRepository)
-        let repositoryData = await [communityData, champagneData].compactMap { $0 }
+        async let community = releaseResult(from: communityRepository)
+        async let champagne = releaseResult(from: champagneRepository)
+        return try decodeResponses(await [community, champagne])
+    }
 
-        guard !repositoryData.isEmpty else {
+    private static func releaseResult(from repository: String) async -> (String, Result<Data, Error>) {
+        do {
+            let (_, data) = try await releaseData(from: repository)
+            return (repository, .success(data))
+        } catch {
+            return (repository, .failure(error))
+        }
+    }
+
+    /// Keeps valid releases when a different repository fails. If no usable
+    /// release metadata was decoded, surface the first repository error instead
+    /// of presenting an outage as an empty catalog.
+    static func decodeResponses(
+        _ responses: [(String, Result<Data, Error>)]
+    ) throws -> [WineRuntimeCatalogRelease] {
+        var releases: [WineRuntimeCatalogRelease] = []
+        var failures: [Error] = []
+        for (repository, result) in responses {
+            do {
+                releases += try decodeReleases(from: result.get(), repository: repository)
+            } catch {
+                failures.append(error)
+            }
+        }
+        if releases.isEmpty, let failure = failures.first {
+            throw failure
+        }
+        if responses.isEmpty {
             throw WineRuntimeCatalogError.allRepositoriesUnavailable
         }
-
-        return try repositoryData.flatMap { repository, data in
-            try decodeReleases(from: data, repository: repository)
-        }
+        return releases
     }
 
     private static func releaseData(from repository: String) async throws -> (String, Data) {
@@ -164,7 +211,37 @@ public enum WineRuntimeCatalog {
         identifier: String? = nil,
         progress: @escaping @Sendable (ResumableDownloadProgress) -> Void = { _ in }
     ) async throws -> InstalledWineRuntime {
-        let runtimeIdentifier = identifier ?? release.suggestedIdentifier
+        let runtimeIdentifier = try WineRuntimeStore.validatedIdentifier(identifier ?? release.suggestedIdentifier)
+        guard runtimeIdentifier != WineRuntimeStore.defaultRuntimeIdentifier else {
+            throw WineRuntimeStoreError.defaultRuntimeIsReserved
+        }
+        guard !WineRuntimeStore.isIdentifierOccupied(runtimeIdentifier) else {
+            throw WineRuntimeStoreError.runtimeAlreadyExists(runtimeIdentifier)
+        }
+
+        await installGate.acquire()
+        do {
+            let runtime = try await installValidatedRelease(
+                release,
+                identifier: runtimeIdentifier,
+                progress: progress
+            )
+            await installGate.release()
+            return runtime
+        } catch {
+            await installGate.release()
+            throw error
+        }
+    }
+
+    private static func installValidatedRelease(
+        _ release: WineRuntimeCatalogRelease,
+        identifier runtimeIdentifier: String,
+        progress: @escaping @Sendable (ResumableDownloadProgress) -> Void
+    ) async throws -> InstalledWineRuntime {
+        guard !WineRuntimeStore.isIdentifierOccupied(runtimeIdentifier) else {
+            throw WineRuntimeStoreError.runtimeAlreadyExists(runtimeIdentifier)
+        }
         let downloadFolder = WhiskyWineInstaller.runtimeDownloadsFolder
         try FileManager.default.createDirectory(at: downloadFolder, withIntermediateDirectories: true)
         let archive = downloadFolder.appending(path: "runtime-\(release.archiveSHA256.prefix(20)).tar.gz")
@@ -207,6 +284,7 @@ public enum WineRuntimeCatalog {
 
     private static func isSafeTag(_ tagName: String) -> Bool {
         guard tagName.hasPrefix("v"), tagName.count > 1, tagName.count <= 48 else { return false }
+        guard !tagName.contains(".."), !tagName.hasSuffix(".") else { return false }
         let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
         return tagName.unicodeScalars.allSatisfy(allowed.contains)
     }

@@ -41,6 +41,14 @@ public enum GPTKImportError: LocalizedError, Equatable {
     case unsealedItem(String)
     /// No imported payload exists in the store to deploy or remove.
     case storeEmpty
+    /// A Wine original cannot be safely restored because its runtime build
+    /// identity is missing or ambiguous. The store is retained for recovery.
+    case runtimeOriginalsUnverified(String)
+    /// Deployment would replace a different file already owned by the runtime.
+    case runtimePayloadConflict(String)
+    /// The new GPTK payload was imported, but could not be redeployed to a
+    /// runtime that previously held the store-managed payload.
+    case runtimeRedeploymentFailed(identifier: String, reason: String)
     /// The stored payload fails the checks an import applies (the reason is
     /// the failing check's message), so it is not deployed.
     case storeNotVerified(String)
@@ -61,6 +69,21 @@ public enum GPTKImportError: LocalizedError, Equatable {
             String(localized: "gptk.error.unsealedItem") + " " + path
         case .storeEmpty:
             String(localized: "gptk.error.storeEmpty")
+        case let .runtimeOriginalsUnverified(runtime):
+            String(
+                localized: "gptk.error.runtimeOriginalsUnverified",
+                defaultValue: "Wine files for runtime ‘\(runtime)’ could not be verified. The GPTK backup was kept to avoid damaging the runtime."
+            )
+        case let .runtimePayloadConflict(path):
+            String(
+                localized: "gptk.error.runtimePayloadConflict",
+                defaultValue: "GPTK cannot be deployed because ‘\(path)’ already contains different runtime files. Those files were left untouched."
+            )
+        case let .runtimeRedeploymentFailed(identifier, reason):
+            String(
+                localized: "gptk.error.runtimeRedeploymentFailed",
+                defaultValue: "GPTK was imported, but could not be redeployed to runtime ‘\(identifier)’: \(reason)"
+            )
         case let .storeNotVerified(reason):
             String(localized: "gptk.error.storeNotVerified") + " " + reason
         }
@@ -101,6 +124,16 @@ public struct GPTKStoreRecord: Codable, Equatable, Sendable {
 /// `gptkCapable` in their version plist get the payload deployed.
 public enum GPTKImporter {
     static let logger = Logger(subsystem: Bundle.champagneBundleIdentifier, category: "GPTKImporter")
+    private static let fileOperationLock = NSRecursiveLock()
+
+    /// Serializes GPTK store replacement, runtime deployment, repair, and
+    /// verification across app background tasks. Recursive because an import
+    /// or store removal calls the same guarded runtime helpers internally.
+    static func withFileOperationLock<T>(_ operation: () throws -> T) rethrows -> T {
+        fileOperationLock.lock()
+        defer { fileOperationLock.unlock() }
+        return try operation()
+    }
 
     /// The D3D forwarders Apple ships, and the only ones deployed. GPTK 4 has
     /// no d3d9 forwarder.
@@ -296,15 +329,31 @@ public enum GPTKImporter {
     /// the framework.
     @discardableResult
     public static func importPayload(_ payload: GPTKPayload) throws -> GPTKStoreRecord {
-        try importPayload(
-            payload,
-            intoStore: storeFolder,
-            revalidatingWith: isAppleSigned(_:identifier:),
-            beforeReplacingStoredPayload: {
-                guard storedRecord(inStore: storeFolder) != nil else { return }
-                try removeDeployedPayloadsFromAllRuntimes()
+        try withFileOperationLock {
+            let store = storeFolder
+            var runtimes = deployedRuntimes(
+                from: WineRuntimeStore.installedRuntimes(),
+                usingStore: store
+            )
+            if !runtimes.contains(where: { $0.identifier == WineRuntimeStore.defaultRuntimeIdentifier }),
+               let defaultRuntime = WineRuntimeStore.runtime(identifier: WineRuntimeStore.defaultRuntimeIdentifier),
+               defaultRuntime.versionInfo.gptkCapable == true {
+                runtimes.insert(defaultRuntime, at: 0)
             }
-        )
+            let record = try importPayload(
+                payload,
+                intoStore: store,
+                revalidatingWith: isAppleSigned(_:identifier:),
+                beforeReplacingStoredPayload: {
+                    guard storedRecord(inStore: store) != nil else { return }
+                    try removeDeployedPayloadsFromAllRuntimes()
+                }
+            )
+            try redeployStoredPayloads(to: runtimes, usingStore: store) { runtime in
+                try deployStoredPayload(forRuntime: runtime.identifier)
+            }
+            return record
+        }
     }
 
     /// Testable seam for ``importPayload(_:)``.
@@ -317,47 +366,86 @@ public enum GPTKImporter {
         _ payload: GPTKPayload,
         intoStore store: URL,
         revalidatingWith isAppleSigned: ((_ code: URL, _ identifier: String) -> Bool)? = nil,
-        beforeReplacingStoredPayload: (() throws -> Void)? = nil
+        beforeReplacingStoredPayload: (() throws -> Void)? = nil,
+        afterReplacingStoredPayload: ((GPTKStoreRecord) throws -> Void)? = nil
     ) throws -> GPTKStoreRecord {
-        let fileManager = FileManager.default
-        let libDest = store.appending(path: "lib")
-        let staging = store.appending(path: "lib.staging")
+        try withFileOperationLock {
+            let fileManager = FileManager.default
+            let libDest = store.appending(path: "lib")
+            let staging = store.appending(path: "lib.staging")
 
-        try fileManager.createDirectory(at: store, withIntermediateDirectories: true)
-        try? fileManager.removeItem(at: staging)
-        var version = payload.version
-        do {
-            // The folder a link points to, not the link: a staged link would
-            // leave the store pointing at the source, and every later deploy
-            // would copy whatever the source holds by then.
-            try fileManager.copyItem(at: payload.libRoot.resolvingSymlinksInPath(), to: staging)
-            try linkUnixBridges(inPayload: staging)
-            if let isAppleSigned {
-                version = try validatePayload(at: staging, isAppleSigned: isAppleSigned).version
-            }
-            try beforeReplacingStoredPayload?()
-            // attributesOfItem does not follow a link, so a lib left behind as
-            // a dangling link is replaced too; fileExists would not see it.
-            if (try? fileManager.attributesOfItem(atPath: libDest.path(percentEncoded: false))) != nil {
-                try fileManager.removeItem(at: libDest)
-            }
-            try fileManager.moveItem(at: staging, to: libDest)
-        } catch {
+            try fileManager.createDirectory(at: store, withIntermediateDirectories: true)
             try? fileManager.removeItem(at: staging)
-            throw error
-        }
+            var version = payload.version
+            do {
+                // The folder a link points to, not the link: a staged link would
+                // leave the store pointing at the source, and every later deploy
+                // would copy whatever the source holds by then.
+                try fileManager.copyItem(at: payload.libRoot.resolvingSymlinksInPath(), to: staging)
+                try linkUnixBridges(inPayload: staging)
+                if let isAppleSigned {
+                    version = try validatePayload(at: staging, isAppleSigned: isAppleSigned).version
+                }
+                try beforeReplacingStoredPayload?()
+                // attributesOfItem does not follow a link, so a lib left behind as
+                // a dangling link is replaced too; fileExists would not see it.
+                if (try? fileManager.attributesOfItem(atPath: libDest.path(percentEncoded: false))) != nil {
+                    try fileManager.removeItem(at: libDest)
+                }
+                try fileManager.moveItem(at: staging, to: libDest)
+            } catch {
+                try? fileManager.removeItem(at: staging)
+                throw error
+            }
 
-        let record = GPTKStoreRecord(gptkVersion: version, importedAt: Date())
-        let encoder = PropertyListEncoder()
-        encoder.outputFormat = .xml
-        try encoder.encode(record).write(to: recordURL(inStore: store))
-        // Validated above, as it sits in the store now, so the first deploy
-        // does not check it again.
-        if isAppleSigned != nil {
-            stampStoreVerified(inStore: store)
+            let record = GPTKStoreRecord(gptkVersion: version, importedAt: Date())
+            let encoder = PropertyListEncoder()
+            encoder.outputFormat = .xml
+            try encoder.encode(record).write(to: recordURL(inStore: store))
+            // Validated above, as it sits in the store now, so the first deploy
+            // does not check it again.
+            if isAppleSigned != nil {
+                stampStoreVerified(inStore: store)
+            }
+            try afterReplacingStoredPayload?(record)
+            logger.info("Imported GPTK payload \(record.gptkVersion, privacy: .public) into store")
+            return record
         }
-        logger.info("Imported GPTK payload \(record.gptkVersion, privacy: .public) into store")
-        return record
+    }
+
+    static func deployedRuntimes(
+        from runtimes: [InstalledWineRuntime],
+        usingStore store: URL
+    ) -> [InstalledWineRuntime] {
+        runtimes.filter {
+            $0.versionInfo.gptkCapable == true
+                && isStorePayloadDeployed(inLibraryFolder: $0.libraryFolder, usingStore: store)
+        }
+    }
+
+    static func redeployStoredPayloads(
+        to runtimes: [InstalledWineRuntime],
+        usingStore store: URL,
+        deploy: (InstalledWineRuntime) throws -> Void
+    ) throws {
+        guard storedRecord(inStore: store) != nil else { throw GPTKImportError.storeEmpty }
+        var failures: [(String, String)] = []
+        for runtime in runtimes where runtime.versionInfo.gptkCapable == true {
+            do {
+                try deploy(runtime)
+            } catch {
+                failures.append((runtime.identifier, error.localizedDescription))
+                logger.error(
+                    """
+                    GPTK redeployment to runtime \(runtime.identifier, privacy: .public) failed: \
+                    \(error.localizedDescription, privacy: .public)
+                    """
+                )
+            }
+        }
+        if let (identifier, reason) = failures.first {
+            throw GPTKImportError.runtimeRedeploymentFailed(identifier: identifier, reason: reason)
+        }
     }
 
     /// Recreates the unix bridge names in the payload at `libRoot` as symlinks

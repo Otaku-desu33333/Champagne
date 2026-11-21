@@ -274,6 +274,8 @@ public class Wine {
     /// Returned by `prepareProgramLaunch`, and turned into a shell command by
     /// ``generateRunCommand(for:wineBinary:)``.
     struct PreparedLaunch: Equatable, Sendable {
+        /// The Wine executable resolved for the selected runtime when this launch was prepared.
+        let wineBinary: URL
         /// The environment `wine64` runs with.
         ///
         /// Holds no `WINEDLLOVERRIDES` unless the overrides are meant for a
@@ -283,6 +285,12 @@ public class Wine {
         /// The arguments `wine64` runs with: `start /unix` and the program, or
         /// `explorer /desktop=...` for a program that runs in a virtual desktop.
         let arguments: [String]
+
+        init(environment: [String: String], arguments: [String], wineBinary: URL = Wine.wineBinary) {
+            self.wineBinary = wineBinary
+            self.environment = environment
+            self.arguments = arguments
+        }
     }
 
     /// Runs a Windows executable within a Wine bottle.
@@ -370,6 +378,10 @@ public class Wine {
         onOutput: (@MainActor (ProcessOutput) -> Void)?,
         prepare: @MainActor () async throws -> PreparedLaunch
     ) async throws -> ProgramRunResult {
+        let wasInFlight = bottle.inFlight
+        bottle.inFlight = true
+        defer { bottle.inFlight = wasInFlight }
+
         // Note: Launcher detection and fix application happen before this method
         // is called: in Program.launchWithUserMode for a program, and via
         // LauncherFixes.detectAndApply in the app's run-a-file paths
@@ -393,7 +405,7 @@ public class Wine {
         }
 
         let launch = try await prepare()
-        let selectedWineBinary = try runtimeLibraryFolder(for: bottle).appending(path: "Wine/bin/wine64")
+        let selectedWineBinary = launch.wineBinary
 
         // Opened after preparation, not before: the registry imports during
         // preparation open logs of their own, and this way the program's log
@@ -505,9 +517,14 @@ public class Wine {
         descendantLaunchers: [LauncherType] = [],
         recommendedBackend: GraphicsBackend? = nil,
         builtinD3D12IsD3DMetal: Bool? = nil,
+        backendAvailability: ((GraphicsBackend) -> Bool)? = nil,
         overrideWriter: DLLOverrideWriter = { try await syncDLLOverrides(bottle: $0, scopes: $1) },
         importer: RegistryImporter = { try await importRegistry(document: $0, bottle: $1) }
     ) async throws -> PreparedLaunch {
+        let wasInFlight = bottle.inFlight
+        bottle.inFlight = true
+        defer { bottle.inFlight = wasInFlight }
+
         // Fail before mutating the prefix if this bottle's selected runtime is
         // missing. The same runtime determines the binary and graphics payloads.
         let runtimeIdentifier = bottle.settings.wineRuntimeIdentifier ?? WineRuntimeStore.defaultRuntimeIdentifier
@@ -515,9 +532,14 @@ public class Wine {
         if runtimeIdentifier != WineRuntimeStore.defaultRuntimeIdentifier, installedRuntime == nil {
             throw WineRuntimeStoreError.runtimeNotInstalled(runtimeIdentifier)
         }
+        let selectedRuntimeLibraryFolder = installedRuntime?.libraryFolder ?? WhiskyWineInstaller.libraryFolder
+        let selectedWineBinary = selectedRuntimeLibraryFolder.appending(path: "Wine/bin/wine64")
         let recommendedBackend = recommendedBackend ?? GraphicsBackendResolver.resolve(for: bottle.settings)
+        let isBackendAvailable = backendAvailability ?? {
+            WhiskyWineInstaller.isBackendAvailable($0, for: bottle.settings)
+        }
         let builtinD3D12IsD3DMetal = builtinD3D12IsD3DMetal
-            ?? (installedRuntime == nil ? GPTKImporter.isDeployed() : GPTKImporter.isDeployed(for: bottle))
+            ?? GPTKImporter.isDeployed(inLibraryFolder: selectedRuntimeLibraryFolder)
 
         // Font aliases first, before any setting is read: their import can take
         // a few seconds, and a setting changed during it would leave this launch
@@ -540,17 +562,27 @@ public class Wine {
         let launcher = LauncherType.detect(from: url)
         let steeredLauncher = overridesApplyToDescendants ? nil : launcher
         let effectiveBackendChoice = programOverrides?.graphicsBackend ?? bottle.settings.graphicsBackend
-        let effectiveBackend = if effectiveBackendChoice == .recommended {
+        var effectiveBackend = if effectiveBackendChoice == .recommended {
             steeredLauncher.map { GraphicsBackendResolver.resolve(for: $0) } ?? recommendedBackend
         } else {
             effectiveBackendChoice
+        }
+
+        // A bottle or program can retain a backend choice after changing to a
+        // runtime that cannot provide its payload. Fall back for this launch
+        // only; keep the saved choice so it becomes active again on a capable runtime.
+        if !isBackendAvailable(effectiveBackend) {
+            effectiveBackend = isBackendAvailable(recommendedBackend) ? recommendedBackend : .dxvk
         }
 
         // The bottle composes its overrides from its own resolution, which does
         // not know what is being launched, so pin the decision here or a
         // steered launcher gets DXVK's files and none of its overrides.
         var programOverrides = programOverrides
-        if effectiveBackendChoice == .recommended, effectiveBackend != recommendedBackend {
+        let shouldPinBackend = effectiveBackendChoice == .recommended
+            ? effectiveBackend != recommendedBackend
+            : effectiveBackend != effectiveBackendChoice
+        if shouldPinBackend {
             var pinned = programOverrides ?? ProgramOverrides()
             pinned.graphicsBackend = effectiveBackend
             programOverrides = pinned
@@ -568,7 +600,11 @@ public class Wine {
         // Steam start took away the placeholder its games need (#276).
         let gamesBackend = bottle.settings.graphicsBackend == .recommended
             ? recommendedBackend : bottle.settings.graphicsBackend
-        applyMetalFX(bottle: bottle, backend: steeredLauncher == nil ? effectiveBackend : gamesBackend)
+        applyMetalFX(
+            bottle: bottle,
+            backend: steeredLauncher == nil ? effectiveBackend : gamesBackend,
+            libraryFolder: selectedRuntimeLibraryFolder
+        )
 
         // Enable DXVK if needed: effective backend, the legacy program-level
         // flag (honored only without a backend override, mirroring
@@ -612,7 +648,8 @@ public class Wine {
 
         return PreparedLaunch(
             environment: wineEnvironment,
-            arguments: launchArguments(for: url, args: args, programOverrides: programOverrides)
+            arguments: launchArguments(for: url, args: args, programOverrides: programOverrides),
+            wineBinary: selectedWineBinary
         )
     }
 
@@ -708,7 +745,7 @@ public class Wine {
     /// Generates a terminal command using the runtime selected by the bottle.
     @MainActor
     static func generateRunCommand(for launch: PreparedLaunch, bottle: Bottle) -> String {
-        generateRunCommand(for: launch, wineBinary: wineBinaryPath(for: bottle))
+        generateRunCommand(for: launch, wineBinary: launch.wineBinary)
     }
 
     /// Prefixes `command` with an assignment for each environment variable.
