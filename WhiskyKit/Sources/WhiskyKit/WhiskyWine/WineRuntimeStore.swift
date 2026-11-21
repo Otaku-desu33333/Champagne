@@ -255,16 +255,7 @@ public enum WineRuntimeStore {
             throw WhiskyWineInstallError.tarballNotFound
         }
 
-        if let expectedSHA256 {
-            switch WhiskyWineInstaller.integrityResult(forFileAt: tarball, expectedSHA256: expectedSHA256) {
-            case .match:
-                break
-            case let .mismatch(actual):
-                throw WineRuntimeStoreError.archiveDigestMismatch(actual: actual)
-            case .unreadable:
-                throw WineRuntimeStoreError.archiveUnreadable
-            }
-        }
+        try verifyArchiveDigest(expectedSHA256, of: tarball)
 
         guard !isIdentifierOccupied(identifier, inRuntimesDirectory: runtimeRoot) else {
             throw WineRuntimeStoreError.runtimeAlreadyExists(identifier)
@@ -300,6 +291,18 @@ public enum WineRuntimeStore {
             "Installed Wine runtime \(identifier, privacy: .public) version \(version, privacy: .public)"
         )
         return installed
+    }
+
+    private static func verifyArchiveDigest(_ expectedSHA256: String?, of archive: URL) throws {
+        guard let expectedSHA256 else { return }
+        switch WhiskyWineInstaller.integrityResult(forFileAt: archive, expectedSHA256: expectedSHA256) {
+        case .match:
+            break
+        case let .mismatch(actual):
+            throw WineRuntimeStoreError.archiveDigestMismatch(actual: actual)
+        case .unreadable:
+            throw WineRuntimeStoreError.archiveUnreadable
+        }
     }
 
     private static func makeRecord(

@@ -66,7 +66,7 @@ struct SetupView: View {
             // user makes a consent choice. Without a configured project token,
             // skip that choice and go directly to runtime setup on later launches.
             if !firstTime,
-               (!Telemetry.isConfigured || Telemetry.consent != .undecided),
+               !Telemetry.isConfigured || Telemetry.consent != .undecided,
                !WhiskyWineInstaller.isWhiskyWineInstalled() {
                 path = [.whiskyWineDownload]
             }

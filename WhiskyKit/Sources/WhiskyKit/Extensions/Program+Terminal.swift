@@ -91,7 +91,7 @@ extension Program {
     /// - Throws: An error if the bottle cannot be prepared or the script cannot be written.
     func writeTerminalScript(
         args: [String],
-        overrideWriter: Wine.DLLOverrideWriter = { try await Wine.syncDLLOverrides(bottle: $0, scopes: $1) },
+        overrideWriter: @escaping Wine.DLLOverrideWriter = { try await Wine.syncDLLOverrides(bottle: $0, scopes: $1) },
         importer: Wine.RegistryImporter = { try await Wine.importRegistry(document: $0, bottle: $1) },
         bootstrapper: Wine.PrefixBootstrapper = { try await Wine.bootstrapPrefix(bottle: $0) }
     ) async throws -> URL {

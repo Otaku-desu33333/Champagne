@@ -138,7 +138,7 @@ struct GPTKSettingsSection: View {
     private func importPayload(from url: URL) {
         importing = true
         Task { @MainActor in
-            guard !(await anyBottleHasRunningWineProcess()) else {
+            guard await !anyBottleHasRunningWineProcess() else {
                 importing = false
                 importError = "Close all Champagne bottles before replacing the GPTK payload."
                 return
@@ -196,8 +196,8 @@ struct GPTKSettingsSection: View {
 
     @MainActor
     private func anyBottleHasRunningWineProcess() async -> Bool {
-        for bottle in BottleVM.shared.bottles {
-            if await Wine.isWineserverRunning(for: bottle) { return true }
+        for bottle in BottleVM.shared.bottles where await Wine.isWineserverRunning(for: bottle) {
+            return true
         }
         return false
     }
@@ -205,7 +205,7 @@ struct GPTKSettingsSection: View {
     private func removePayload() {
         importing = true
         Task { @MainActor in
-            guard !(await anyBottleHasRunningWineProcess()) else {
+            guard await !anyBottleHasRunningWineProcess() else {
                 importing = false
                 importError = "Close all Champagne bottles before removing the GPTK payload."
                 return

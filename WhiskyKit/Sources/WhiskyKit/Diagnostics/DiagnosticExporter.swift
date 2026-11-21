@@ -224,7 +224,8 @@ public enum DiagnosticExporter {
     private static func generateBottleConfigSection(bottle: Bottle) -> String {
         var section = "### Bottle Config\n\n"
         section += "- **Bottle:** \(bottle.settings.name)\n"
-        section += "- **Wine Runtime:** \(bottle.settings.wineRuntimeIdentifier ?? WineRuntimeStore.defaultRuntimeIdentifier)\n"
+        section += "- **Wine Runtime:** "
+            + "\(bottle.settings.wineRuntimeIdentifier ?? WineRuntimeStore.defaultRuntimeIdentifier)\n"
         section += "- **Windows Version:** \(bottle.settings.windowsVersion)\n"
         section += "- **Graphics Backend:** \(bottle.settings.graphicsBackend)\n"
         section += "- **DXVK Async:** \(bottle.settings.dxvkAsync ? "Enabled" : "Disabled")\n"

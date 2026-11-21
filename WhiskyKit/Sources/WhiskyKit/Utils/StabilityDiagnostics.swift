@@ -117,7 +117,8 @@ public enum StabilityDiagnostics {
         """
 
         summary += "Bottle Name: \(bottle.settings.name)\n"
-        summary += "Wine Runtime: \(bottle.settings.wineRuntimeIdentifier ?? WineRuntimeStore.defaultRuntimeIdentifier)\n"
+        summary += "Wine Runtime: "
+            + "\(bottle.settings.wineRuntimeIdentifier ?? WineRuntimeStore.defaultRuntimeIdentifier)\n"
         summary += "Windows Version: \(bottle.settings.windowsVersion)\n"
         summary += "Bottle Wine Version: \(bottle.settings.wineVersion)\n\n"
 

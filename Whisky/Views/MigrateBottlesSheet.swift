@@ -70,6 +70,13 @@ struct MigrateBottlesSheet: View {
             .font(.subheadline)
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
+            Label(
+                "Older Whisky may drop Champagne-only Wine runtime settings when it rewrites a shared bottle.",
+                systemImage: "exclamationmark.triangle.fill"
+            )
+            .font(.caption)
+            .foregroundStyle(.orange)
+            .fixedSize(horizontal: false, vertical: true)
         }
         .padding()
     }

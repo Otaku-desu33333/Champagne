@@ -34,7 +34,8 @@ extension WineConfigSection {
                 }
                 .labelsHidden()
                 .pickerStyle(.menu)
-                .disabled(bottle.inFlight || importingWineRuntime || selectingWineRuntime || availableWineRuntimes.isEmpty)
+                .disabled(bottle.inFlight || importingWineRuntime || selectingWineRuntime || availableWineRuntimes
+                    .isEmpty)
             }
 
             if let selected = availableWineRuntimes.first(where: { $0.identifier == selectedRuntimeIdentifier }) {
@@ -47,8 +48,8 @@ extension WineConfigSection {
                     "\(version.major).\(version.minor).\(version.patch)",
                     capability
                 ))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                .font(.caption)
+                .foregroundStyle(.secondary)
             } else {
                 Text("runtime.selection.missing")
                     .font(.caption)

@@ -238,147 +238,6 @@ extension GPTKImporter {
         return "\(info.version.major).\(info.version.minor).\(info.version.patch)"
     }
 
-    /// Compares copied payload items without following links. Used to remove
-    /// only exact store-managed files while preserving unrelated runtime data.
-    static func fileSystemItemsMatch(_ lhs: URL, _ rhs: URL) -> Bool {
-        let fileManager = FileManager.default
-        guard let lhsValues = try? lhs.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey]),
-              let rhsValues = try? rhs.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey]),
-              lhsValues.isSymbolicLink == rhsValues.isSymbolicLink,
-              lhsValues.isDirectory == rhsValues.isDirectory
-        else { return false }
-
-        if lhsValues.isSymbolicLink == true {
-            guard let lhsDestination = try? fileManager.destinationOfSymbolicLink(atPath: lhs.path(percentEncoded: false)),
-                  let rhsDestination = try? fileManager.destinationOfSymbolicLink(atPath: rhs.path(percentEncoded: false))
-            else { return false }
-            return lhsDestination == rhsDestination
-        }
-
-        if lhsValues.isDirectory == true {
-            guard let lhsChildren = try? fileManager.contentsOfDirectory(at: lhs, includingPropertiesForKeys: nil),
-                  let rhsChildren = try? fileManager.contentsOfDirectory(at: rhs, includingPropertiesForKeys: nil)
-            else { return false }
-            let lhsByName = Dictionary(uniqueKeysWithValues: lhsChildren.map { ($0.lastPathComponent, $0) })
-            let rhsByName = Dictionary(uniqueKeysWithValues: rhsChildren.map { ($0.lastPathComponent, $0) })
-            guard Set(lhsByName.keys) == Set(rhsByName.keys) else { return false }
-            return lhsByName.allSatisfy { name, child in
-                guard let rhsChild = rhsByName[name] else { return false }
-                return fileSystemItemsMatch(child, rhsChild)
-            }
-        }
-
-        return fileManager.contentsEqual(
-            atPath: lhs.path(percentEncoded: false),
-            andPath: rhs.path(percentEncoded: false)
-        )
-    }
-
-    /// Removes a store item only when it still matches the copied source. For
-    /// partially copied directories, it descends into matching names and keeps
-    /// unrelated files rather than deleting the containing directory.
-    static func removeMatchingStoreItems(from destination: URL, matching source: URL) throws {
-        let fileManager = FileManager.default
-        if fileSystemItemsMatch(destination, source) {
-            try fileManager.removeItem(at: destination)
-            return
-        }
-
-        guard let destinationValues = try? destination.resourceValues(
-            forKeys: [.isDirectoryKey, .isSymbolicLinkKey]
-        ),
-            destinationValues.isDirectory == true,
-            destinationValues.isSymbolicLink != true,
-            let sourceValues = try? source.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey]),
-            sourceValues.isDirectory == true,
-            sourceValues.isSymbolicLink != true,
-            let sourceChildren = try? fileManager.contentsOfDirectory(at: source, includingPropertiesForKeys: nil)
-        else { return }
-
-        for sourceChild in sourceChildren {
-            try removeMatchingStoreItems(
-                from: destination.appending(path: sourceChild.lastPathComponent),
-                matching: sourceChild
-            )
-        }
-        if (try? fileManager.contentsOfDirectory(atPath: destination.path(percentEncoded: false)))?.isEmpty == true {
-            try fileManager.removeItem(at: destination)
-        }
-    }
-
-    static func originalsRecordURL(inStore store: URL) -> URL {
-        store.appending(path: "originals").appending(path: "OriginalsVersion.plist")
-    }
-
-    /// Backup location for one runtime. The existing default-runtime path is
-    /// retained so installations made by earlier Champagne versions still
-    /// restore their original Wine DLLs correctly.
-    static func originalsFolder(inStore store: URL, runtimeIdentifier: String) -> URL {
-        if runtimeIdentifier == WineRuntimeStore.defaultRuntimeIdentifier {
-            return store.appending(path: "originals")
-        }
-        return store.appending(path: "runtime-originals").appending(path: runtimeIdentifier)
-    }
-
-    static func originalsRecord(inStore store: URL) -> GPTKOriginalsRecord? {
-        guard let data = try? Data(contentsOf: originalsRecordURL(inStore: store)) else { return nil }
-        return try? PropertyListDecoder().decode(GPTKOriginalsRecord.self, from: data)
-    }
-
-    /// Readies the `originals/` folder for a deploy against `folder`, dropping
-    /// backups left by a previous engine: restoring those would put that
-    /// engine's DLLs into this one's tree. The stamp is written before the first
-    /// backup so an interrupted deploy still leaves originals remove will
-    /// recognise and restore.
-    private static func prepareOriginals(
-        originalsFolder originals: URL,
-        forLibraryFolder folder: URL
-    ) throws {
-        let fileManager = FileManager.default
-        guard let runtimeStamp = runtimeVersionStamp(inLibraryFolder: folder),
-              let runtimeVersion = runtimeVersionNumber(inLibraryFolder: folder)
-        else {
-            throw GPTKImportError.runtimeOriginalsUnverified(folder.lastPathComponent)
-        }
-
-        let recordStamp = originalsRecord(inOriginalsFolder: originals)?.runtimeVersion
-        let hasBackups = forwarderDLLNames.contains {
-            fileManager.fileExists(atPath: originals.appending(path: $0).path(percentEncoded: false))
-        }
-        if recordStamp != runtimeStamp, fileManager.fileExists(atPath: originals.path(percentEncoded: false)) {
-            if hasBackups {
-                let legacyVersion = recordStamp.flatMap { stamp in
-                    stamp.split(separator: ".").count == 3 && !stamp.hasPrefix("runtime:") ? stamp : nil
-                }
-                let fingerprintChanged = recordStamp?.hasPrefix("runtime:") == true
-                let legacyVersionChanged = legacyVersion.map { $0 != runtimeVersion } == true
-                guard fingerprintChanged || legacyVersionChanged else {
-                    throw GPTKImportError.runtimeOriginalsUnverified(folder.lastPathComponent)
-                }
-            }
-            // A different runtime fingerprint proves that these originals
-            // came from an older engine. An old numeric-only stamp is discarded
-            // only when its major.minor.patch differs; same-version legacy
-            // backups are ambiguous because prereleases were not recorded.
-            try fileManager.removeItem(at: originals)
-        }
-        try fileManager.createDirectory(at: originals, withIntermediateDirectories: true)
-
-        let encoder = PropertyListEncoder()
-        encoder.outputFormat = .xml
-        try encoder.encode(GPTKOriginalsRecord(runtimeVersion: runtimeStamp))
-            .write(to: originalsRecordURL(inOriginalsFolder: originals))
-    }
-
-    static func originalsRecordURL(inOriginalsFolder folder: URL) -> URL {
-        folder.appending(path: "OriginalsVersion.plist")
-    }
-
-    static func originalsRecord(inOriginalsFolder folder: URL) -> GPTKOriginalsRecord? {
-        guard let data = try? Data(contentsOf: originalsRecordURL(inOriginalsFolder: folder)) else { return nil }
-        return try? PropertyListDecoder().decode(GPTKOriginalsRecord.self, from: data)
-    }
-
     /// Testable seam for ``deployStoredPayload()``.
     static func deploy(
         fromStore store: URL,
@@ -388,7 +247,6 @@ extension GPTKImporter {
         guard storedRecord(inStore: store) != nil else {
             throw GPTKImportError.storeEmpty
         }
-        let fileManager = FileManager.default
         let storeLib = store.appending(path: "lib")
         let wineLib = folder.appending(path: "Wine").appending(path: "lib")
         let peDir = wineLib.appending(path: "wine").appending(path: "x86_64-windows")
@@ -401,65 +259,10 @@ extension GPTKImporter {
         // so the loop below sees the tree it expects and never files the
         // interposer away as if it were Wine's own builtin.
         removeVideoProcessor(fromLibraryFolder: folder, usingStore: store)
-
-        for name in forwarderDLLNames {
-            let target = peDir.appending(path: name)
-            let backup = originals.appending(path: name)
-            // Back up whatever Wine shipped, once; a redeploy over an existing
-            // GPTK forwarder must not overwrite the original with Apple's copy.
-            if fileManager.fileExists(atPath: target.path(percentEncoded: false)) {
-                if !fileManager.fileExists(atPath: backup.path(percentEncoded: false)),
-                   !isGPTKForwarder(target, matching: storeLib) {
-                    try fileManager.moveItem(at: target, to: backup)
-                } else {
-                    try fileManager.removeItem(at: target)
-                }
-            }
-            try fileManager.copyItem(
-                at: storeLib.appending(path: "wine").appending(path: "x86_64-windows").appending(path: name),
-                to: target
-            )
-        }
-
-        try fileManager.createDirectory(at: unixDir, withIntermediateDirectories: true)
-        for name in unixLibraryNames {
-            let link = unixDir.appending(path: name)
-            try? fileManager.removeItem(at: link)
-            try fileManager.createSymbolicLink(
-                atPath: link.path(percentEncoded: false),
-                withDestinationPath: unixLinkDestination
-            )
-        }
-
-        let externalDest = wineLib.appending(path: "external")
-        let externalValues = try? externalDest.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
-        if externalValues?.isSymbolicLink == true || (externalValues != nil && externalValues?.isDirectory != true) {
-            throw GPTKImportError.runtimePayloadConflict(externalDest.path(percentEncoded: false))
-        }
-        try fileManager.createDirectory(at: externalDest, withIntermediateDirectories: true)
-        let storeExternal = storeLib.appending(path: "external")
-        for source in try fileManager.contentsOfDirectory(at: storeExternal, includingPropertiesForKeys: nil) {
-            let destination = externalDest.appending(path: source.lastPathComponent)
-            if fileManager.fileExists(atPath: destination.path(percentEncoded: false)) {
-                guard fileSystemItemsMatch(destination, source) else {
-                    throw GPTKImportError.runtimePayloadConflict(destination.path(percentEncoded: false))
-                }
-                continue
-            }
-            try fileManager.copyItem(at: source, to: destination)
-        }
-        // Apple's payload is in place now, which is the only moment the bridge
-        // can be installed: it forwards into the payload's own shared dylib and
-        // has nothing to bind to before this point.
-        try installMetalFXBridge(intoLibraryFolder: folder, usingStore: store)
-        // Apple's DLLs are in place now, which is the only moment the swaps can
-        // be made: the runtime ships the interposers but has nothing to forward
-        // into until this point. A payload from a build they were never
-        // validated on is deployed without them; install checks the version.
-        for interposer in interposers {
-            try install(interposer, intoLibraryFolder: folder)
-        }
-        try installNVAPIBridge(intoLibraryFolder: folder, usingStore: store)
+        try deployForwarders(from: storeLib, into: peDir, originals: originals)
+        try deployUnixBridges(into: unixDir)
+        try deployExternalPayload(from: storeLib, into: wineLib)
+        try installRuntimeBridges(into: folder, usingStore: store)
         logger.info("Deployed GPTK payload into the runtime tree")
     }
 

@@ -221,7 +221,7 @@ public class Wine {
     ) throws -> AsyncStream<ProcessOutput> {
         try runProcess(
             name: name, args: args, environment: environment,
-            executableURL: try runtimeLibraryFolder(for: bottle).appending(path: "Wine/bin/wine64"),
+            executableURL: runtimeLibraryFolder(for: bottle).appending(path: "Wine/bin/wine64"),
             fileHandle: fileHandle
         )
     }
@@ -250,7 +250,7 @@ public class Wine {
 
         return try runProcess(
             name: name, args: args, environment: wineserverEnvironment,
-            executableURL: try runtime(for: bottle).libraryFolder.appending(path: "Wine/bin/wineserver"),
+            executableURL: runtime(for: bottle).libraryFolder.appending(path: "Wine/bin/wineserver"),
             fileHandle: fileHandle
         )
     }
@@ -291,6 +291,31 @@ public class Wine {
             self.environment = environment
             self.arguments = arguments
         }
+    }
+
+    private struct LaunchBackendInput {
+        let url: URL
+        let bottle: Bottle
+        let programOverrides: ProgramOverrides?
+        let overridesApplyToDescendants: Bool
+        let recommendedBackend: GraphicsBackend
+        let backendAvailability: (GraphicsBackend) -> Bool
+        let runtimeLibraryFolder: URL
+    }
+
+    private struct LaunchEnvironmentInput {
+        let url: URL
+        let bottle: Bottle
+        let environment: [String: String]
+        let programOverrides: ProgramOverrides?
+        let programSettings: ProgramSettings?
+        let gameProfileEnvironment: [String: String]
+        let overridesApplyToDescendants: Bool
+        let descendantExecutables: [String]
+        let descendantLaunchers: [LauncherType]
+        let recommendedBackend: GraphicsBackend
+        let builtinD3D12IsD3DMetal: Bool
+        let overrideWriter: DLLOverrideWriter
     }
 
     /// Runs a Windows executable within a Wine bottle.
@@ -392,12 +417,7 @@ public class Wine {
         // game process continues as a child of wineserver after the launcher exits. Full
         // App Nap prevention for the entire game session would require tracking wineserver,
         // but this provides protection during the critical startup/initialization phase.
-        let activityToken: NSObjectProtocol? = bottle.settings.disableAppNap
-            ? ProcessInfo.processInfo.beginActivity(
-                options: [.userInitiated, .idleSystemSleepDisabled],
-                reason: "Wine process running for \(bottle.settings.name)"
-            )
-            : nil
+        let activityToken = beginRunActivity(for: bottle)
         defer {
             if let token = activityToken {
                 ProcessInfo.processInfo.endActivity(token)
@@ -455,15 +475,37 @@ public class Wine {
         launcherDidExit(process, exitCode: exitCode)
 
         // Update the run log entry with exit information
-        var updatedHistory = RunLogStore.load(for: programName, in: bottle.url)
-        updatedHistory.markCompleted(
-            id: runLogEntry.id,
+        markRunCompleted(
+            runLogEntry,
+            programName: programName,
+            bottle: bottle,
             exitCode: exitCode,
             hasWineDebug: launch.environment.keys.contains("WINEDEBUG")
         )
-        RunLogStore.save(updatedHistory, for: programName, in: bottle.url)
 
         return ProgramRunResult(exitCode: exitCode, logFileURL: logFileURL, runLogEntryId: runLogEntry.id)
+    }
+
+    @MainActor
+    private static func markRunCompleted(
+        _ entry: RunLogEntry,
+        programName: String,
+        bottle: Bottle,
+        exitCode: Int32,
+        hasWineDebug: Bool
+    ) {
+        var history = RunLogStore.load(for: programName, in: bottle.url)
+        history.markCompleted(id: entry.id, exitCode: exitCode, hasWineDebug: hasWineDebug)
+        RunLogStore.save(history, for: programName, in: bottle.url)
+    }
+
+    @MainActor
+    private static func beginRunActivity(for bottle: Bottle) -> NSObjectProtocol? {
+        guard bottle.settings.disableAppNap else { return nil }
+        return ProcessInfo.processInfo.beginActivity(
+            options: [.userInitiated, .idleSystemSleepDisabled],
+            reason: "Wine process running for \(bottle.settings.name)"
+        )
     }
 
     /// Prepares a bottle to launch a program, without launching it.
@@ -518,7 +560,7 @@ public class Wine {
         recommendedBackend: GraphicsBackend? = nil,
         builtinD3D12IsD3DMetal: Bool? = nil,
         backendAvailability: ((GraphicsBackend) -> Bool)? = nil,
-        overrideWriter: DLLOverrideWriter = { try await syncDLLOverrides(bottle: $0, scopes: $1) },
+        overrideWriter: @escaping DLLOverrideWriter = { try await syncDLLOverrides(bottle: $0, scopes: $1) },
         importer: RegistryImporter = { try await importRegistry(document: $0, bottle: $1) }
     ) async throws -> PreparedLaunch {
         let wasInFlight = bottle.inFlight
@@ -559,98 +601,114 @@ public class Wine {
         // the bottle's games do. Steered, every game started that way got DXVK's
         // set, `d3d12=` included (#276). The launcher keeps DXVK through its own
         // `AppDefaults` entry, written from the launcher's set.
-        let launcher = LauncherType.detect(from: url)
-        let steeredLauncher = overridesApplyToDescendants ? nil : launcher
-        let effectiveBackendChoice = programOverrides?.graphicsBackend ?? bottle.settings.graphicsBackend
-        var effectiveBackend = if effectiveBackendChoice == .recommended {
-            steeredLauncher.map { GraphicsBackendResolver.resolve(for: $0) } ?? recommendedBackend
+        let effectiveProgramOverrides = try prepareLaunchBackend(LaunchBackendInput(
+            url: url,
+            bottle: bottle,
+            programOverrides: programOverrides,
+            overridesApplyToDescendants: overridesApplyToDescendants,
+            recommendedBackend: recommendedBackend,
+            backendAvailability: isBackendAvailable,
+            runtimeLibraryFolder: selectedRuntimeLibraryFolder
+        ))
+        let wineEnvironment = try await prepareLaunchEnvironment(LaunchEnvironmentInput(
+            url: url,
+            bottle: bottle,
+            environment: environment,
+            programOverrides: effectiveProgramOverrides,
+            programSettings: programSettings,
+            gameProfileEnvironment: gameProfileEnvironment,
+            overridesApplyToDescendants: overridesApplyToDescendants,
+            descendantExecutables: descendantExecutables,
+            descendantLaunchers: descendantLaunchers,
+            recommendedBackend: recommendedBackend,
+            builtinD3D12IsD3DMetal: builtinD3D12IsD3DMetal,
+            overrideWriter: overrideWriter
+        ))
+
+        return PreparedLaunch(
+            environment: wineEnvironment,
+            arguments: launchArguments(for: url, args: args, programOverrides: effectiveProgramOverrides),
+            wineBinary: selectedWineBinary
+        )
+    }
+
+    @MainActor
+    private static func prepareLaunchBackend(_ input: LaunchBackendInput) throws -> ProgramOverrides? {
+        // Resolve, deploy, and pin one backend before constructing the launch's environment.
+        let launcher = LauncherType.detect(from: input.url)
+        let steeredLauncher = input.overridesApplyToDescendants ? nil : launcher
+        let backendChoice = input.programOverrides?.graphicsBackend ?? input.bottle.settings.graphicsBackend
+        var effectiveBackend = if backendChoice == .recommended {
+            steeredLauncher.map { GraphicsBackendResolver.resolve(for: $0) } ?? input.recommendedBackend
         } else {
-            effectiveBackendChoice
+            backendChoice
+        }
+        if !input.backendAvailability(effectiveBackend) {
+            effectiveBackend = input.backendAvailability(input.recommendedBackend) ? input.recommendedBackend : .dxvk
         }
 
-        // A bottle or program can retain a backend choice after changing to a
-        // runtime that cannot provide its payload. Fall back for this launch
-        // only; keep the saved choice so it becomes active again on a capable runtime.
-        if !isBackendAvailable(effectiveBackend) {
-            effectiveBackend = isBackendAvailable(recommendedBackend) ? recommendedBackend : .dxvk
-        }
-
-        // The bottle composes its overrides from its own resolution, which does
-        // not know what is being launched, so pin the decision here or a
-        // steered launcher gets DXVK's files and none of its overrides.
-        var programOverrides = programOverrides
-        let shouldPinBackend = effectiveBackendChoice == .recommended
-            ? effectiveBackend != recommendedBackend
-            : effectiveBackend != effectiveBackendChoice
+        var programOverrides = input.programOverrides
+        let shouldPinBackend = backendChoice == .recommended
+            ? effectiveBackend != input.recommendedBackend
+            : effectiveBackend != backendChoice
         if shouldPinBackend {
             var pinned = programOverrides ?? ProgramOverrides()
             pinned.graphicsBackend = effectiveBackend
             programOverrides = pinned
         }
 
-        // The profile has to resolve under whichever name this runtime uses
-        // before anything in the bottle starts, or the app boots into an empty one.
-        WineUserProfile.reconcile(bottleURL: bottle.url)
+        WineUserProfile.reconcile(bottleURL: input.bottle.url)
+        try prepareBackendPrefix(effectiveBackend, bottle: input.bottle)
 
-        try prepareBackendPrefix(effectiveBackend, bottle: bottle)
-
-        // The MetalFX placeholder serves the bottle's games, and only D3DMetal
-        // answers it. A launcher's own launch says nothing about them, so it is
-        // keyed on what they resolve to: keyed on the launcher's DXVK, every
-        // Steam start took away the placeholder its games need (#276).
-        let gamesBackend = bottle.settings.graphicsBackend == .recommended
-            ? recommendedBackend : bottle.settings.graphicsBackend
+        let gamesBackend = input.bottle.settings.graphicsBackend == .recommended
+            ? input.recommendedBackend : input.bottle.settings.graphicsBackend
         applyMetalFX(
-            bottle: bottle,
+            bottle: input.bottle,
             backend: steeredLauncher == nil ? effectiveBackend : gamesBackend,
-            libraryFolder: selectedRuntimeLibraryFolder
+            libraryFolder: input.runtimeLibraryFolder
         )
 
-        // Enable DXVK if needed: effective backend, the legacy program-level
-        // flag (honored only without a backend override, mirroring
-        // applyProgramOverrides), or launcher auto-enable. A launcher that only
-        // carries a game's plan still runs, and its helpers keep restarting, on
-        // DXVK: its files stay in place, and are copied after a DXMT plan's, so
-        // the launcher keeps working when the two share a file.
         let legacyProgramDXVK = programOverrides?.graphicsBackend == nil && programOverrides?.dxvk == true
         let shouldEnableDXVK = deploysDXVK(
-            effectiveBackend: effectiveBackend, legacyProgramDXVK: legacyProgramDXVK,
-            launcherCarriesDescendantPlan: overridesApplyToDescendants && launcher != nil,
-            autoEnableDXVK: bottle.settings.autoEnableDXVK, detectedLauncher: bottle.settings.detectedLauncher
+            effectiveBackend: effectiveBackend,
+            legacyProgramDXVK: legacyProgramDXVK,
+            launcherCarriesDescendantPlan: input.overridesApplyToDescendants && launcher != nil,
+            autoEnableDXVK: input.bottle.settings.autoEnableDXVK,
+            detectedLauncher: input.bottle.settings.detectedLauncher
         )
-
         if shouldEnableDXVK {
-            try enableDXVK(bottle: bottle)
+            try enableDXVK(bottle: input.bottle)
         }
+        return programOverrides
+    }
 
-        // A game configuration applied before the game was in the bottle keeps
-        // its variables in the bottle settings, scoped to the game's executables.
-        // The caller's profile (a Steam launch plan) wins where both set one.
-        let gameProfileEnvironment = bottle.settings.gameConfigProfile(launching: url, caller: gameProfileEnvironment)
-
-        // Build the Wine environment with program overrides flowing through the programUser layer
+    @MainActor
+    private static func prepareLaunchEnvironment(_ input: LaunchEnvironmentInput) async throws -> [String: String] {
+        let profileEnvironment = input.bottle.settings.gameConfigProfile(
+            launching: input.url,
+            caller: input.gameProfileEnvironment
+        )
         var wineEnvironment = constructWineEnvironment(
-            for: bottle, environment: environment, programOverrides: programOverrides,
-            programSettings: programSettings, gameProfileEnvironment: gameProfileEnvironment,
-            recommendedBackend: recommendedBackend, builtinD3D12IsD3DMetal: builtinD3D12IsD3DMetal
+            for: input.bottle,
+            environment: input.environment,
+            programOverrides: input.programOverrides,
+            programSettings: input.programSettings,
+            gameProfileEnvironment: profileEnvironment,
+            recommendedBackend: input.recommendedBackend,
+            builtinD3D12IsD3DMetal: input.builtinD3D12IsD3DMetal
         )
-
         try await applyDLLOverrides(
-            for: url, bottle: bottle,
+            for: input.url,
+            bottle: input.bottle,
             wineEnvironment: &wineEnvironment,
-            applyToDescendants: overridesApplyToDescendants,
-            descendantExecutables: descendantExecutables,
-            descendantLaunchers: descendantLaunchers,
-            recommendedBackend: recommendedBackend,
-            builtinD3D12IsD3DMetal: builtinD3D12IsD3DMetal,
-            writer: overrideWriter
+            applyToDescendants: input.overridesApplyToDescendants,
+            descendantExecutables: input.descendantExecutables,
+            descendantLaunchers: input.descendantLaunchers,
+            recommendedBackend: input.recommendedBackend,
+            builtinD3D12IsD3DMetal: input.builtinD3D12IsD3DMetal,
+            writer: input.overrideWriter
         )
-
-        return PreparedLaunch(
-            environment: wineEnvironment,
-            arguments: launchArguments(for: url, args: args, programOverrides: programOverrides),
-            wineBinary: selectedWineBinary
-        )
+        return wineEnvironment
     }
 
     /// The `wine64` arguments for a launch, with an optional per-program virtual desktop.
@@ -1033,7 +1091,8 @@ public class Wine {
     @MainActor
     public static func killBottleAndWait(bottle: Bottle, timeout: TimeInterval = 5) {
         guard let selectedWineserver = try? runtimeLibraryFolder(for: bottle)
-            .appending(path: "Wine/bin/wineserver") else { return }
+            .appending(path: "Wine/bin/wineserver")
+        else { return }
         let process = Process()
         process.executableURL = selectedWineserver
         process.arguments = ["-k"]

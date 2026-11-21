@@ -107,7 +107,7 @@ public enum WineRuntimeCatalog {
     public static func releases() async throws -> [WineRuntimeCatalogRelease] {
         async let community = releaseResult(from: communityRepository)
         async let champagne = releaseResult(from: champagneRepository)
-        return try decodeResponses(await [community, champagne])
+        return try await decodeResponses([community, champagne])
     }
 
     private static func releaseResult(from repository: String) async -> (String, Result<Data, Error>) {

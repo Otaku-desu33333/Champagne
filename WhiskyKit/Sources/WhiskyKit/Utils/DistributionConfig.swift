@@ -23,7 +23,8 @@ public enum DistributionConfig {
     public static let baseURL = "https://otaku-desu33333.github.io/Champagne"
 
     /// Public Wine runtime manifest maintained with the verified upstream archives.
-    public static let versionPlistURL = "https://raw.githubusercontent.com/frankea/Whisky/main/dist/pages/WhiskyWineVersion.plist"
+    public static let versionPlistURL = "https://raw.githubusercontent.com/frankea/Whisky/main/dist/pages/"
+        + "WhiskyWineVersion.plist"
 
     /// Base URL for the Wine Libraries archives whose digest the manifest publishes.
     public static let releasesBaseURL = "https://github.com/frankea/Whisky/releases/download"

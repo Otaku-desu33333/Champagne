@@ -36,14 +36,12 @@ struct WineRuntimeCatalogSheet: View {
             List {
                 Section {
                     Text("runtime.catalog.description")
-                    Link(
-                        "runtime.catalog.source",
-                        destination: URL(string: "https://github.com/frankea/Whisky/releases")!
-                    )
-                    Link(
-                        "runtime.catalog.champagneSource",
-                        destination: URL(string: "https://github.com/Otaku-desu33333/Champagne/releases")!
-                    )
+                    if let sourceURL = URL(string: "https://github.com/frankea/Whisky/releases") {
+                        Link("runtime.catalog.source", destination: sourceURL)
+                    }
+                    if let champagneSourceURL = URL(string: "https://github.com/Otaku-desu33333/Champagne/releases") {
+                        Link("runtime.catalog.champagneSource", destination: champagneSourceURL)
+                    }
                 }
 
                 if isLoading {

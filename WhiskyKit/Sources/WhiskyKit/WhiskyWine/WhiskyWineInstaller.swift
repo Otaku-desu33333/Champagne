@@ -437,7 +437,7 @@ public class WhiskyWineInstaller {
 
     /// Testable availability check for an individual runtime record.
     static func backendAvailability(_ backend: GraphicsBackend, for runtime: InstalledWineRuntime) -> Bool {
-        return backendAvailability(
+        backendAvailability(
             backend,
             runtimeInfo: runtime.versionInfo,
             d3dMetalInstalled: isD3DMetalPresent(inLibraryFolder: runtime.libraryFolder),
