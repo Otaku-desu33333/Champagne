@@ -28,6 +28,7 @@ extension ContentView {
         ScrollViewReader { proxy in
             List(selection: $selected) {
                 Section {
+                    discoverRow
                     libraryRow
                 }
                 // A bottle is a Wine prefix, so it belongs under a heading rather
@@ -92,12 +93,12 @@ extension ContentView {
         }
     }
 
-    /// Selecting nothing means the library, not an empty pane: the library is
-    /// the home screen, and a person who has not picked a bottle has not made a
-    /// mistake.
+    /// The library stays a separate page while discovery becomes the landing
+    /// page for the Steam-first workflow.
     var libraryRow: some View {
         Button {
             selected = nil
+            selectedPage = .library
         } label: {
             Label("library.title", systemImage: "square.grid.2x2")
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -106,20 +107,41 @@ extension ContentView {
         .buttonStyle(.plain)
         .listRowBackground(
             RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(selected == nil ? AnyShapeStyle(.selection) : AnyShapeStyle(.clear))
+                .fill(selected == nil && selectedPage == .library
+                    ? AnyShapeStyle(.selection)
+                    : AnyShapeStyle(.clear))
         )
         .accessibilityIdentifier("sidebar.library")
     }
 
+    var discoverRow: some View {
+        Button {
+            selected = nil
+            selectedPage = .discover
+        } label: {
+            Label("discover.title", systemImage: "sparkles")
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .listRowBackground(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(selected == nil && selectedPage == .discover
+                    ? AnyShapeStyle(.selection)
+                    : AnyShapeStyle(.clear))
+        )
+        .accessibilityIdentifier("sidebar.discover")
+    }
+
     @ViewBuilder
     var detail: some View {
-        if let bottle = selected {
-            if let bottle = bottleVM.bottles.first(where: { $0.url == bottle }) {
-                BottleView(bottle: bottle)
-                    .disabled(bottle.inFlight)
-                    .id(bottle.url)
-            }
-        } else if bottleVM.countActive() > 0 {
+        if let selected, let bottle = bottleVM.bottles.first(where: { $0.url == selected }) {
+            BottleView(bottle: bottle)
+                .disabled(bottle.inFlight)
+                .id(bottle.url)
+        } else if selectedPage == .discover {
+            GameDiscoverView()
+        } else if selectedPage == .library || bottleVM.countActive() > 0 {
             LibraryView(selectedBottle: $selected, refresh: $triggerRefresh)
         } else {
             if bottleVM.bottles.isEmpty || bottleVM.countActive() == 0, bottlesLoaded {

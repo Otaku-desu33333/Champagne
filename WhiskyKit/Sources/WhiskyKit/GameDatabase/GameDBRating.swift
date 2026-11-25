@@ -23,7 +23,7 @@ import Foundation
 /// Ratings indicate how well a game runs under Wine on macOS.
 /// The five tiers are ordered from best to worst: ``works`` is the
 /// highest rating, ``notSupported`` the lowest.
-public enum CompatibilityRating: String, Codable, Sendable, CaseIterable, Comparable {
+public enum CompatibilityRating: String, Codable, Hashable, Sendable, CaseIterable, Comparable {
     /// Game runs flawlessly with no issues.
     case works
     /// Game is playable with minor issues or workarounds.

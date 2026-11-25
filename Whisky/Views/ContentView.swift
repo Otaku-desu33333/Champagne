@@ -22,11 +22,17 @@ import SwiftUI
 import UniformTypeIdentifiers
 import WhiskyKit
 
+enum ContentViewPage: Hashable {
+    case discover
+    case library
+}
+
 struct ContentView: View {
     @EnvironmentObject var bottleVM: BottleVM
     @Binding var showSetup: Bool
 
     @State var selected: URL?
+    @State var selectedPage: ContentViewPage? = .discover
     @State var showBottleCreation: Bool = false
     @State var bottlesLoaded: Bool = false
     @State var showBottleSelection: Bool = false
@@ -115,31 +121,33 @@ struct ContentView: View {
             ))
         }
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    showBottleCreation.toggle()
-                } label: {
-                    Image(systemName: "plus")
-                        .help("button.createBottle")
+            if selectedPage != .discover {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        showBottleCreation.toggle()
+                    } label: {
+                        Image(systemName: "plus")
+                            .help("button.createBottle")
+                    }
+                    .accessibilityIdentifier("toolbar.createBottle")
                 }
-                .accessibilityIdentifier("toolbar.createBottle")
-            }
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    bottleVM.loadBottles()
-                    if let bottle = bottleVM.bottles.first(where: { $0.url == selected }) {
-                        Task { await bottle.updateInstalledPrograms() }
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        bottleVM.loadBottles()
+                        if let bottle = bottleVM.bottles.first(where: { $0.url == selected }) {
+                            Task { await bottle.updateInstalledPrograms() }
+                        }
+                        triggerRefresh.toggle()
+                        withAnimation(.default) {
+                            refreshAnimation = .degrees(360)
+                        } completion: {
+                            refreshAnimation = .degrees(0)
+                        }
+                    } label: {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                            .help("button.refresh")
+                            .rotationEffect(refreshAnimation)
                     }
-                    triggerRefresh.toggle()
-                    withAnimation(.default) {
-                        refreshAnimation = .degrees(360)
-                    } completion: {
-                        refreshAnimation = .degrees(0)
-                    }
-                } label: {
-                    Image(systemName: "arrow.triangle.2.circlepath")
-                        .help("button.refresh")
-                        .rotationEffect(refreshAnimation)
                 }
             }
         }
@@ -157,7 +165,10 @@ struct ContentView: View {
                 toast: $toast
             )
         }
-        .onChange(of: selected) { oldValue, _ in
+        .onChange(of: selected) { oldValue, newValue in
+            if newValue != nil {
+                selectedPage = nil
+            }
             // Check if previous bottle had running processes
             guard let oldURL = oldValue,
                   let oldBottle = bottleVM.bottles.first(where: { $0.url == oldURL })

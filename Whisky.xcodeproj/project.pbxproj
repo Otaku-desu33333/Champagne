@@ -100,6 +100,7 @@
 		C1A2B3C4E5F60601A9B0C1D6 /* AudioFindingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A2B3C4E5F60601A9B0C1D7 /* AudioFindingsView.swift */; };
 		C1A2B3C4E5F60601A9B0C1D8 /* AudioConfigSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A2B3C4E5F60601A9B0C1D9 /* AudioConfigSection.swift */; };
 		C1A2B3C4E5F60601A9B0F2D8 /* LibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A2B3C4E5F60601A9B0F2D9 /* LibraryView.swift */; };
+		D1A2B3C4E5F60718293A4B5C /* GameDiscoverView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A2B3C4E5F60718293A4B5D /* GameDiscoverView.swift */; };
 		C1A2B3C4E5F60601A9B0F1D8 /* LibraryCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A2B3C4E5F60601A9B0F1D9 /* LibraryCard.swift */; };
 		C1A2B3C4E5F60601A9B0D1D8 /* DiscordConfigSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A2B3C4E5F60601A9B0D1D9 /* DiscordConfigSection.swift */; };
 		C1A2B3C4E5F60601A9B0C2D0 /* AudioTroubleshootingWizardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A2B3C4E5F60601A9B0C2D1 /* AudioTroubleshootingWizardView.swift */; };
@@ -303,6 +304,7 @@
 		C1A2B3C4E5F60601A9B0C1D7 /* AudioFindingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioFindingsView.swift; sourceTree = "<group>"; };
 		C1A2B3C4E5F60601A9B0C1D9 /* AudioConfigSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioConfigSection.swift; sourceTree = "<group>"; };
 		C1A2B3C4E5F60601A9B0F2D9 /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LibraryView.swift; path = Whisky/Views/Library/LibraryView.swift; sourceTree = SOURCE_ROOT; };
+		D1A2B3C4E5F60718293A4B5D /* GameDiscoverView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = GameDiscoverView.swift; path = Whisky/Views/Library/GameDiscoverView.swift; sourceTree = SOURCE_ROOT; };
 		C1A2B3C4E5F60601A9B0F1D9 /* LibraryCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LibraryCard.swift; path = Whisky/Views/Library/LibraryCard.swift; sourceTree = SOURCE_ROOT; };
 		C1A2B3C4E5F60601A9B0D1D9 /* DiscordConfigSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscordConfigSection.swift; sourceTree = "<group>"; };
 		C1A2B3C4E5F60601A9B0C2D1 /* AudioTroubleshootingWizardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioTroubleshootingWizardView.swift; sourceTree = "<group>"; };
@@ -466,6 +468,7 @@
 			children = (
 				C1A2B3C4E5F60601A9B0C1D9 /* AudioConfigSection.swift */,
 				C1A2B3C4E5F60601A9B0F2D9 /* LibraryView.swift */,
+				D1A2B3C4E5F60718293A4B5D /* GameDiscoverView.swift */,
 				C1A2B3C4E5F60601A9B0F1D9 /* LibraryCard.swift */,
 				C1A2B3C4E5F60601A9B0D1D9 /* DiscordConfigSection.swift */,
 				6E40498029CCA8B0006E3F1B /* BottleView.swift */,
@@ -1092,6 +1095,7 @@
 				C1A2B3C4E5F60601A9B0C1D6 /* AudioFindingsView.swift in Sources */,
 				C1A2B3C4E5F60601A9B0C1D8 /* AudioConfigSection.swift in Sources */,
 				C1A2B3C4E5F60601A9B0F2D8 /* LibraryView.swift in Sources */,
+				D1A2B3C4E5F60718293A4B5C /* GameDiscoverView.swift in Sources */,
 				C1A2B3C4E5F60601A9B0F1D8 /* LibraryCard.swift in Sources */,
 				C1A2B3C4E5F60601A9B0D1D8 /* DiscordConfigSection.swift in Sources */,
 				C1A2B3C4E5F60601A9B0C2D0 /* AudioTroubleshootingWizardView.swift in Sources */,
