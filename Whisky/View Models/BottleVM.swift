@@ -153,6 +153,18 @@ final class BottleVM: ObservableObject {
         return newBottleDir
     }
 
+    /// Creates a managed environment and waits until initialization and registry
+    /// persistence finish. Callers can then safely start an installer in it.
+    func createManagedBottle(bottleName: String, winVersion: WinVersion, bottleURL: URL) async -> Bottle? {
+        let request = BottleCreationRequest(
+            bottleName: bottleName,
+            winVersion: winVersion,
+            bottleURL: bottleURL,
+            newBottleDir: bottleURL.appending(path: UUID().uuidString)
+        )
+        return await createBottleTask(request: request)
+    }
+
     private struct BottleCreationRequest {
         let bottleName: String
         let winVersion: WinVersion
@@ -160,7 +172,8 @@ final class BottleVM: ObservableObject {
         let newBottleDir: URL
     }
 
-    private func createBottleTask(request: BottleCreationRequest) async {
+    @discardableResult
+    private func createBottleTask(request: BottleCreationRequest) async -> Bottle? {
         var bottle: Bottle?
         do {
             // The Wine runtime is required to initialize the prefix; fail fast
@@ -209,8 +222,10 @@ final class BottleVM: ObservableObject {
             createdBottle.isAvailable = true
             createdBottle.inFlight = false
             Telemetry.capture(.firstBottleCreated)
+            return createdBottle
         } catch {
             handleBottleCreationFailure(error, request: request, bottle: bottle)
+            return nil
         }
     }
 
