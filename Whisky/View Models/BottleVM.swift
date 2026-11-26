@@ -97,6 +97,11 @@ final class BottleVM: ObservableObject {
         managedSteamBottleURL = url
     }
 
+    func forgetManagedSteamBottle() {
+        UserDefaults.standard.removeObject(forKey: "champagne.managedSteamBottle")
+        managedSteamBottleURL = nil
+    }
+
     struct BottleCreationAlert: Identifiable {
         let id = UUID()
         let message: String
@@ -173,7 +178,14 @@ final class BottleVM: ObservableObject {
             bottleURL: bottleURL,
             newBottleDir: bottleURL.appending(path: UUID().uuidString)
         )
-        return await createBottleTask(request: request)
+        // Record the planned location before creation, so a restart between
+        // registry persistence and this method returning cannot orphan it.
+        rememberManagedSteamBottle(request.newBottleDir)
+        let result = await createBottleTask(request: request)
+        if result == nil, managedSteamBottleURL?.standardizedFileURL == request.newBottleDir.standardizedFileURL {
+            forgetManagedSteamBottle()
+        }
+        return result
     }
 
     private struct BottleCreationRequest {

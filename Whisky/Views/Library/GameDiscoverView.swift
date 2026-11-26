@@ -274,7 +274,15 @@ struct GameDiscoverView: View {
                 bottleVM.steamSetupToken = nil
             }
         }
-        let savedURL = bottleVM.managedSteamBottleURL
+        var savedURL = bottleVM.managedSteamBottleURL
+        if let saved = savedURL,
+           !FileManager.default.fileExists(atPath: saved.path(percentEncoded: false)),
+           !bottleVM.bottlesList.paths.contains(where: { $0.standardizedFileURL == saved.standardizedFileURL }) {
+            // A restart may have happened before creation made the directory.
+            // Only clear a reservation that has neither files nor a registry entry.
+            bottleVM.forgetManagedSteamBottle()
+            savedURL = nil
+        }
         var bottle = savedURL.flatMap { saved in
             bottleVM.bottles.first { $0.url.standardizedFileURL == saved.standardizedFileURL && $0.isAvailable }
         }
@@ -287,8 +295,7 @@ struct GameDiscoverView: View {
             bottle = await bottleVM.createManagedBottle(
                 bottleName: "Champagne Games", winVersion: .win10, bottleURL: BottleData.defaultBottleDir
             )
-            guard let bottle else { bottleVM.steamSetupStatus = nil; return }
-            bottleVM.rememberManagedSteamBottle(bottle.url)
+            guard bottle != nil else { bottleVM.steamSetupStatus = nil; return }
         }
         guard let bottle else { bottleVM.steamSetupStatus = nil; return }
 
