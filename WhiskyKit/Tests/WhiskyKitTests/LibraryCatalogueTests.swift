@@ -22,6 +22,18 @@ import Testing
 
 @Suite("Library Catalogue Tests")
 struct LibraryCatalogueTests {
+    @Test("Steam request storage deduplicates, migrates and dismisses individual games")
+    func steamInstallRequests() {
+        let stored = SteamInstallRequests.adding(42, to: "7,42,7,invalid,-1")
+        #expect(SteamInstallRequests.decode(stored) == [7, 42])
+        let migrated = SteamInstallRequests.adding(42, to: stored)
+        #expect(migrated == stored)
+        let added = SteamInstallRequests.adding(99, to: migrated)
+        #expect(SteamInstallRequests.decode(added) == [7, 42, 99])
+        #expect(SteamInstallRequests.decode(SteamInstallRequests.removing(42, from: added)) == [7, 99])
+        #expect(SteamInstallRequests.adding(0, to: added) == added)
+    }
+
     private func bottle() -> (url: URL, settings: BottleSettings) {
         (URL(fileURLWithPath: "/tmp/whisky-library-test/Bottle"), BottleSettings())
     }

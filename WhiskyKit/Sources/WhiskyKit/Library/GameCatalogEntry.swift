@@ -18,6 +18,31 @@
 
 import Foundation
 
+/// Stable storage for the Steam requests shown in discovery.
+public enum SteamInstallRequests {
+    public static func decode(_ text: String) -> [Int] {
+        var seen = Set<Int>()
+        return text.split(separator: ",").compactMap { Int($0) }
+            .filter { $0 > 0 && seen.insert($0).inserted }
+    }
+
+    public static func adding(_ appID: Int, to text: String) -> String {
+        var ids = decode(text)
+        guard appID > 0 else { return encode(ids) }
+        ids.removeAll { $0 == appID }
+        ids.append(appID)
+        return encode(ids)
+    }
+
+    public static func removing(_ appID: Int, from text: String) -> String {
+        encode(decode(text).filter { $0 != appID })
+    }
+
+    private static func encode(_ ids: [Int]) -> String {
+        ids.map(String.init).joined(separator: ",")
+    }
+}
+
 /// Where a game can be acquired. The source owns its sign-in and entitlement
 /// rules: Steam checks access inside its client, while a publisher page is used
 /// for free games distributed outside Steam.

@@ -34,15 +34,11 @@ struct GameDiscoverView: View {
     @State private var installedSteamIDs: Set<Int> = []
 
     private var pendingAppIDs: [Int] {
-        var seen = Set<Int>()
-        return pendingIDsText.split(separator: ",").compactMap { Int($0) }
-            .filter { $0 > 0 && seen.insert($0).inserted }
+        SteamInstallRequests.decode(pendingIDsText)
     }
 
     private func rememberPending(_ appID: Int) {
-        var ids = pendingAppIDs.filter { $0 != appID }
-        ids.append(appID)
-        pendingIDsText = ids.map(String.init).joined(separator: ",")
+        pendingIDsText = SteamInstallRequests.adding(appID, to: pendingIDsText)
     }
 
     private static let catalog = GameCatalogSeed.compatibleSteamGames(from: GameDBLoader.loadDefaults())
@@ -170,7 +166,7 @@ struct GameDiscoverView: View {
                     .foregroundStyle(.secondary)
                 }
                 Button("Dismiss status") {
-                    pendingIDsText = pendingAppIDs.filter { $0 != appID }.map(String.init).joined(separator: ",")
+                    pendingIDsText = SteamInstallRequests.removing(appID, from: pendingIDsText)
                 }
                 .buttonStyle(.link)
                 .help("This only hides the status; Steam continues any active download.")
