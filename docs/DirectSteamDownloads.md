@@ -1,38 +1,35 @@
-# Direct Steam downloads: development plan
+# Steam downloads from Champagne
 
-Champagne's current Discover flow starts the Windows Steam installer and hands
-game installation to Steam. That is an existing prototype, not the target flow.
-The target is to sign in to Steam and start, monitor, and manage downloads in
-Champagne. Steam must decide whether the account has access to the content.
+Champagne owns discovery and the install experience. The official Steam client
+remains responsible for sign-in, entitlement checks, and game content. On the
+first install, Champagne prepares Steam inside its managed game environment,
+sends the selected App ID to Steam, and reads Steam's install manifest for
+progress and completion. This keeps one Steam account session for both
+downloading and launching.
 
-## Investigation
+## Direct downloader investigation
 
-[DepotDownloader](https://github.com/SteamRE/DepotDownloader) is a possible
-backend. It can authenticate with Steam, select Windows content on macOS, and
-download Steam depots. It is a third-party command-line application, not an
-official Valve integration. Its license, release packaging, authentication and
-output interfaces must be evaluated before distribution. Do not pass a
-password as a command-line argument or write credentials to logs.
+[DepotDownloader](https://github.com/SteamRE/DepotDownloader) can authenticate
+with Steam, select Windows content on macOS, and download depots. It is a
+third-party command-line application, not an official Valve integration. It
+creates its own Steam session, separate from the Steam client Champagne needs
+for many games, and its default implementation persists refresh-token data in
+its local settings store. That creates separate sign-in and session handling,
+and the isolated file test did not establish a complete, playable install. It
+is not the selected production path.
 
-An isolated investigation on Apple Silicon connected anonymously to Steam and
-retrieved Windows manifests for the public Team Fortress 2 dedicated server
-(app 232250). A subsequent filtered download retrieved one 1,740-byte file;
-its SHA-1 matched the value in the Steam manifest. This checks public server
-content only; it does not demonstrate account sign-in, entitlement checks, a
-complete game install, or launching.
+The isolated test connected anonymously to Steam and retrieved Windows
+manifests for the public Team Fortress 2 dedicated server (app 232250). A
+filtered download retrieved one 1,740-byte file whose SHA-1 matched the Steam
+manifest. This proves the downloader can fetch public content; it does not
+prove account sign-in, entitlement checks, or game installation.
 
-## Milestones
+## Remaining verification
 
-1. Prove account sign-in, Steam Guard and access-denied behavior without
-   exposing credentials, then establish a supported way to integrate the
-   downloader and manage its session securely.
-2. Download a selected owned Windows game into an isolated managed location;
-   implement reliable progress, cancellation, retry, and restart recovery.
+1. Verify silent Steam client setup, sign-in, ownership checks, and install
+   handoff on the user's Mac.
+2. Complete and verify progress, retry, and restart recovery for selected games.
 3. Integrate installed games with the library and verify launching, including
-   required Steam client, DRM and first-run dependencies. A successful file
-   download alone must not be presented as proof that a game is playable.
-4. Add and verify the curated free-game publisher flows separately. Preserve
+   Steam client, DRM, and first-run dependencies.
+4. Add and verify curated free-game publisher flows separately. Preserve
    existing Whisky and Champagne data throughout testing.
-
-The Steam-window prototype remains in the tree until a replacement is ready;
-it must not be described as the completed direct-download experience.

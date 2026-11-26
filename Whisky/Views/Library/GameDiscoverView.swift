@@ -246,7 +246,7 @@ struct GameDiscoverView: View {
                 Button {
                     Task { await installSteamGame(appID) }
                 } label: {
-                    Label("Install with Steam", systemImage: "arrow.down.circle")
+                    Label("Install in Champagne", systemImage: "arrow.down.circle")
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(bottleVM.steamSetupToken != nil)
@@ -331,8 +331,13 @@ struct GameDiscoverView: View {
                 defer { try? FileManager.default.removeItem(at: directory) }
                 let installer = directory.appendingPathComponent("SteamSetup.exe")
                 try FileManager.default.moveItem(at: download, to: installer)
-                bottleVM.steamSetupStatus = "Complete Steam setup in the installer window."
-                let result = try await Wine.runProgram(at: installer, bottle: bottle, waitForExit: true)
+                bottleVM.steamSetupStatus = "Setting up Steam…"
+                // SteamSetup is an NSIS installer. Its silent switch keeps
+                // environment preparation inside the Install action instead
+                // of opening a separate wizard for the user to complete.
+                let result = try await Wine.runProgram(
+                    at: installer, args: ["/S"], bottle: bottle, waitForExit: true
+                )
                 guard result.exitCode == 0, SteamLibrary.detectInstall(bottleURL: bottle.url) != nil else {
                     throw NSError(domain: "ChampagneSteamSetup", code: 1, userInfo: [
                         NSLocalizedDescriptionKey: "Steam setup did not complete. Please try again."
@@ -346,7 +351,7 @@ struct GameDiscoverView: View {
                 ])
             }
             rememberPending(appID)
-            bottleVM.steamSetupStatus = "Sign in to Steam and follow its install prompt."
+            bottleVM.steamSetupStatus = "Sign in to Steam to verify ownership and begin the download."
             let result = try await Wine.runProgram(
                 at: root.appending(path: "steam.exe"), args: ["steam://install/\(appID)"], bottle: bottle,
                 onOutput: { output in
