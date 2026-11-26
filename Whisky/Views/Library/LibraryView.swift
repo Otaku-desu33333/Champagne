@@ -70,7 +70,14 @@ struct LibraryView: View {
         .toolbar { sortMenu }
         .toast($model.toast)
         .task(id: reloadTrigger) {
-            await model.reload(bottles: bottles)
+            while !Task.isCancelled {
+                await model.reload(bottles: bottles)
+                do {
+                    try await Task.sleep(for: .seconds(10))
+                } catch {
+                    break
+                }
+            }
         }
         .onChange(of: sort, initial: true) {
             model.sort = sort

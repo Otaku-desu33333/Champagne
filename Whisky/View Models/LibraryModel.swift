@@ -134,6 +134,9 @@ final class LibraryModel: ObservableObject {
             trackSteam(in: bottle)
         }
 
+        // A newer reload may have replaced this task while the filesystem scan
+        // was running. Don't let an older snapshot overwrite the newer one.
+        guard !Task.isCancelled else { return }
         rows = sorted(built)
     }
 
