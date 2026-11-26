@@ -144,7 +144,10 @@ extension ContentView {
         } else if selectedPage == .discover {
             GameDiscoverView()
         } else if selectedPage == .library || bottleVM.countActive() > 0 {
-            LibraryView(selectedBottle: $selected, refresh: $triggerRefresh)
+            LibraryView(selectedBottle: $selected, refresh: $triggerRefresh) {
+                selected = nil
+                selectedPage = .discover
+            }
         } else {
             if bottleVM.bottles.isEmpty || bottleVM.countActive() == 0, bottlesLoaded {
                 VStack {

@@ -36,6 +36,7 @@ struct LibraryView: View {
     /// because the bottle list is unchanged by a refresh, so watching only that
     /// left the button spinning without rebuilding anything.
     @Binding var refresh: Bool
+    var showDiscover: () -> Void
 
     @AppStorage("librarySort") private var sort: LibrarySort = .recent
 
@@ -171,12 +172,10 @@ struct LibraryView: View {
         ContentUnavailableView {
             Label("library.empty.title", systemImage: "square.grid.2x2")
         } description: {
-            Text(bottles.isEmpty ? "library.empty.noBottle" : "library.empty.noPrograms")
+            Text("Find a game in Discover and install it to see it here.")
         } actions: {
-            if let first = bottles.first {
-                Button("library.empty.pinHint") { selectedBottle = first.url }
-                    .buttonStyle(.borderedProminent)
-            }
+            Button("Browse games", action: showDiscover)
+                .buttonStyle(.borderedProminent)
         }
     }
 }
