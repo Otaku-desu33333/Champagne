@@ -10,6 +10,11 @@ neither is placed in the process arguments or Champagne's logs. SteamCMD's
 local account data is directed to a private Champagne support folder with
 owner-only permissions.
 
+Valve's macOS SteamCMD archive contains an Intel executable. Apple silicon
+therefore needs Rosetta 2; Champagne checks for its installed package before
+starting the download service and explains the prerequisite if it is missing.
+It does not invoke macOS's Rosetta installer prompt.
+
 ## Known launch limitation
 
 SteamCMD checks the account and downloads the files, but that login is separate

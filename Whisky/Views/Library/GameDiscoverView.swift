@@ -200,6 +200,11 @@ struct GameDiscoverView: View {
                     }
                 }
             }
+            if !steamAccountName.isEmpty {
+                Button("Use another Steam account") { steamAccountName = "" }
+                    .buttonStyle(.link)
+                    .disabled(bottleVM.steamSetupToken != nil || steamCMDSession.isRunning)
+            }
             ForEach(pendingAppIDs, id: \.self) { appID in
                 let title = Self.catalog.first { game in
                     game.installSources.contains(.steam(appID: appID))
@@ -234,11 +239,13 @@ struct GameDiscoverView: View {
                     }
                     .foregroundStyle(.secondary)
                 }
-                Button("Dismiss status") {
-                    pendingIDsText = SteamInstallRequests.removing(appID, from: pendingIDsText)
+                if steamCMDSession.appID != appID || !steamCMDSession.isRunning {
+                    Button("Dismiss status") {
+                        pendingIDsText = SteamInstallRequests.removing(appID, from: pendingIDsText)
+                    }
+                    .buttonStyle(.link)
+                    .help("This hides the status without removing downloaded game files.")
                 }
-                .buttonStyle(.link)
-                .help("This only hides the status; Steam continues any active download.")
             }
         }
         .frame(maxWidth: 760, alignment: .leading)
@@ -498,7 +505,7 @@ private struct SteamCMDAuthenticationSheet: View {
             Text(prompt == .password ? "Steam password" : "Steam verification code")
                 .font(.title2.bold())
             Text(prompt == .password
-                 ? "Your password is sent directly to SteamCMD through a private input stream. Champagne does not save it."
+                 ? "Champagne sends your password to Steam to complete sign-in and does not save it."
                  : "Enter the email or authenticator code Steam requested. Champagne does not save the code.")
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

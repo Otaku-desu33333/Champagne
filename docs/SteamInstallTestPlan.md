@@ -8,10 +8,11 @@ Steam Guard codes in diagnostics.
 1. Select the `ChampagneAppOnly` Xcode scheme and run Champagne.
 2. In Discover, choose a small Windows game already owned by the test account
    and select **Install in Champagne**.
-3. Confirm Champagne creates the managed game environment and Steam client
-   without opening a setup wizard.
-4. Enter the Steam account name in Champagne. Enter the password or
+3. Enter the Steam account name in Champagne. Enter the password or
    authenticator code only in Champagne's secure prompt.
+4. Confirm Champagne creates the managed game environment and Steam client
+   without opening a setup wizard. Apple silicon also needs Rosetta 2 installed
+   for Valve's macOS SteamCMD download service.
 5. Confirm Champagne shows a direct download progress bar while Steam's Windows
    client download UI stays closed. Stop if the account cannot install the game;
    do not approve a purchase.

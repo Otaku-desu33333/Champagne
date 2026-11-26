@@ -16,7 +16,9 @@
 //  If not, see https://www.gnu.org/licenses/.
 //
 
+import AppKit
 import Combine
+import Darwin
 import Foundation
 
 /// A Steam authentication prompt raised by SteamCMD while Champagne owns the install flow.
@@ -67,8 +69,19 @@ public final class SteamCMDDownloadSession: ObservableObject {
     private var targetDirectory: URL?
     private var gameTitle: String?
     private var gameBottleURL: URL?
+    private var appTerminationObserver: NSObjectProtocol?
 
-    public init() {}
+    public init() {
+        appTerminationObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.cancel()
+            }
+        }
+    }
 
     /// Starts a direct Windows depot download in the managed Steam library.
     ///
@@ -174,6 +187,7 @@ public final class SteamCMDDownloadSession: ObservableObject {
         authenticationPrompt = nil
         guard let process, process.isRunning else { return }
         userCancelled = true
+        Self.terminateDescendants(of: process.processIdentifier)
         process.terminate()
     }
 
@@ -209,6 +223,29 @@ public final class SteamCMDDownloadSession: ObservableObject {
         gameTitle = nil
         gameBottleURL = nil
         appID = nil
+    }
+
+    /// SteamCMD is launched through Valve's shell script, which starts the
+    /// actual downloader as a child process. Stop those descendants first so
+    /// Cancel cannot leave a background transfer running after the UI closes.
+    private static func terminateDescendants(of processID: Int32) {
+        let query = Process()
+        let output = Pipe()
+        query.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
+        query.arguments = ["-P", String(processID)]
+        query.standardOutput = output
+        query.standardError = output
+
+        guard (try? query.run()) != nil else { return }
+        let data = try? output.fileHandleForReading.readToEnd()
+        query.waitUntilExit()
+        let childIDs = String(decoding: data ?? Data(), as: UTF8.self)
+            .split(whereSeparator: \.isNewline)
+            .compactMap { Int32($0) }
+        for childID in childIDs {
+            terminateDescendants(of: childID)
+            _ = kill(childID, SIGTERM)
+        }
     }
 
     private func attachReader(to pipe: Pipe) {
@@ -251,11 +288,15 @@ public final class SteamCMDDownloadSession: ObservableObject {
         let lower = promptScanBuffer.lowercased()
         if lower.contains("steam guard") || lower.contains("two-factor") || lower.contains("2 factor")
             || lower.contains("two factor") || lower.contains("authenticator code")
-            || lower.contains("mobile authenticator") || lower.contains("authentication code") {
+            || lower.contains("mobile authenticator") || lower.contains("authentication code")
+            || lower.contains("auth code") || lower.contains("code from your email")
+            || lower.contains("email code") || lower.contains("guard code") {
             authenticationPrompt = .authenticatorCode
             status = "Enter the code requested by Steam."
             promptScanBuffer = ""
-        } else if lower.contains("password for your account") || lower.contains("enter your password") {
+        } else if lower.contains("password for your account") || lower.contains("enter your password")
+                    || lower.contains("account password")
+                    || lower.range(of: #"password\s*[:>]"#, options: .regularExpression) != nil {
             authenticationPrompt = .password
             status = "Enter your Steam password."
             promptScanBuffer = ""

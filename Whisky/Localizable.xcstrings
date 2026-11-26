@@ -116367,13 +116367,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Browse curated Steam games with Champagne compatibility profiles. Steam handles sign-in and account eligibility."
+            "value" : "Browse curated Steam games with Champagne compatibility profiles. Sign in to download eligible games directly in Champagne."
           }
         },
         "en-GB" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Browse curated Steam games with Champagne compatibility profiles. Steam handles sign-in and account eligibility."
+            "value" : "Browse curated Steam games with Champagne compatibility profiles. Sign in to download eligible games directly in Champagne."
           }
         }
       }
