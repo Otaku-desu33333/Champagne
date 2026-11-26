@@ -232,6 +232,12 @@ struct GameDiscoverView: View {
         guard let bottle else { bottleVM.steamSetupStatus = nil; return }
 
         do {
+            // This environment is dedicated to Steam. Apply the same launcher
+            // profile used by the existing Steam orchestrator before either
+            // the installer or the client starts.
+            if bottle.settings.launcherMode == .auto && bottle.settings.detectedLauncher != .steam {
+                LauncherFixes.apply(to: bottle, launcher: .steam)
+            }
             if SteamLibrary.detectInstall(bottleURL: bottle.url) == nil {
                 bottleVM.steamSetupStatus = "Downloading Steam…"
                 let url = URL(string: "https://cdn.fastly.steamstatic.com/client/installer/SteamSetup.exe")!
@@ -239,10 +245,11 @@ struct GameDiscoverView: View {
                 guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
                     throw CocoaError(.fileReadUnknown)
                 }
-                let installer = FileManager.default.temporaryDirectory
-                    .appendingPathComponent(UUID().uuidString).appendingPathExtension("exe")
+                let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                defer { try? FileManager.default.removeItem(at: directory) }
+                let installer = directory.appendingPathComponent("SteamSetup.exe")
                 try FileManager.default.moveItem(at: download, to: installer)
-                defer { try? FileManager.default.removeItem(at: installer) }
                 bottleVM.steamSetupStatus = "Complete Steam setup in the installer window."
                 let result = try await Wine.runProgram(at: installer, bottle: bottle)
                 guard result.exitCode == 0, SteamLibrary.detectInstall(bottleURL: bottle.url) != nil else {
