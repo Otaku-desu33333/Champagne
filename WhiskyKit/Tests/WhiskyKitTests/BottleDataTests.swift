@@ -45,6 +45,19 @@ final class BottleDataTests: XCTestCase {
 
     // MARK: - First run
 
+    func testManagedReservationOnlyDiscardedWhenNoFilesOrRegistrationExist() throws {
+        var data = BottleData(entriesFile: entriesFile)
+        let planned = tempDir.appendingPathComponent("planned")
+        XCTAssertTrue(data.canDiscardUncreatedReservation(planned))
+        try FileManager.default.createDirectory(at: planned, withIntermediateDirectories: true)
+        XCTAssertFalse(data.canDiscardUncreatedReservation(planned))
+        try FileManager.default.removeItem(at: planned)
+        XCTAssertTrue(data.registerBottlePath(planned))
+        XCTAssertFalse(data.canDiscardUncreatedReservation(planned))
+        let slashed = URL(fileURLWithPath: planned.path + "/", isDirectory: true)
+        XCTAssertFalse(data.canDiscardUncreatedReservation(slashed))
+    }
+
     func testFirstRunCreatesEmptyRegistryFile() {
         let data = BottleData(entriesFile: entriesFile)
 

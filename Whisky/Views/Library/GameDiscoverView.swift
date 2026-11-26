@@ -275,9 +275,7 @@ struct GameDiscoverView: View {
             }
         }
         var savedURL = bottleVM.managedSteamBottleURL
-        if let saved = savedURL,
-           !FileManager.default.fileExists(atPath: saved.path(percentEncoded: false)),
-           !bottleVM.bottlesList.paths.contains(where: { $0.standardizedFileURL == saved.standardizedFileURL }) {
+        if let saved = savedURL, bottleVM.bottlesList.canDiscardUncreatedReservation(saved) {
             // A restart may have happened before creation made the directory.
             // Only clear a reservation that has neither files nor a registry entry.
             bottleVM.forgetManagedSteamBottle()

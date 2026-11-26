@@ -191,6 +191,14 @@ public struct BottleData: Codable {
         return paths.filter { seen.insert(comparablePath($0)).inserted }
     }
 
+    /// A planned managed environment can be forgotten only when neither its
+    /// directory nor a registry entry exists. Existing data stays recoverable.
+    public func canDiscardUncreatedReservation(_ url: URL, fileManager: FileManager = .default) -> Bool {
+        guard !fileManager.fileExists(atPath: url.path(percentEncoded: false)) else { return false }
+        let target = Self.comparablePath(url)
+        return !paths.contains { Self.comparablePath($0) == target }
+    }
+
     /// Appends a bottle path to the registry and verifies the entries file on
     /// disk actually contains it afterwards, so a failed save can't silently
     /// drop the bottle on the next launch (issue #61).
