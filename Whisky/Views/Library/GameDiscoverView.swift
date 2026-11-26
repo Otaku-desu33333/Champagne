@@ -304,12 +304,11 @@ struct GameDiscoverView: View {
             if bottle.settings.launcherMode == .auto && bottle.settings.detectedLauncher != .steam {
                 LauncherFixes.apply(to: bottle, launcher: .steam)
             }
-            let setupIncompleteKey = "champagne.steamSetupIncomplete"
-            if SteamLibrary.detectInstall(bottleURL: bottle.url) == nil
-                || UserDefaults.standard.bool(forKey: setupIncompleteKey) {
+            let setupMarker = SteamSetupMarker()
+            if setupMarker.needsSetup(clientExists: SteamLibrary.detectInstall(bottleURL: bottle.url) != nil) {
                 // Persist before starting: the installer can create steam.exe
                 // before it finishes, so its presence alone is not completion.
-                UserDefaults.standard.set(true, forKey: setupIncompleteKey)
+                setupMarker.begin()
                 bottleVM.steamSetupStatus = "Downloading Steam…"
                 let url = URL(string: "https://cdn.fastly.steamstatic.com/client/installer/SteamSetup.exe")!
                 let (download, response) = try await URLSession.shared.download(from: url)
@@ -339,7 +338,7 @@ struct GameDiscoverView: View {
                         NSLocalizedDescriptionKey: "Steam setup did not complete. Please try again."
                     ])
                 }
-                UserDefaults.standard.removeObject(forKey: setupIncompleteKey)
+                setupMarker.complete()
             }
             guard let root = SteamLibrary.detectInstall(bottleURL: bottle.url) else {
                 throw NSError(domain: "ChampagneSteamSetup", code: 4, userInfo: [

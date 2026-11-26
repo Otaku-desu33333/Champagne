@@ -22,6 +22,22 @@ import Testing
 
 @Suite("Library Catalogue Tests")
 struct LibraryCatalogueTests {
+    @Test("Interrupted Steam setup retries even if the client file exists")
+    func steamSetupMarkerSurvivesNewInstance() throws {
+        let suite = "champagne.setup-test.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let marker = SteamSetupMarker(defaults: defaults)
+        #expect(marker.needsSetup(clientExists: false))
+        #expect(!marker.needsSetup(clientExists: true))
+        marker.begin()
+        let reopened = SteamSetupMarker(defaults: try #require(UserDefaults(suiteName: suite)))
+        #expect(reopened.needsSetup(clientExists: true))
+        reopened.complete()
+        #expect(!marker.needsSetup(clientExists: true))
+        #expect(marker.needsSetup(clientExists: false))
+    }
+
     @Test("Discovery carries the critical compatibility issue for a Steam game")
     func discoveryShowsCompatibilityIssue() throws {
         let entry = GameDBEntry(

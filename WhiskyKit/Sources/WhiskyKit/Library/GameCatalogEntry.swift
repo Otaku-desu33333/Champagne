@@ -18,6 +18,28 @@
 
 import Foundation
 
+/// Persists whether an installer was started without confirming completion.
+public struct SteamSetupMarker {
+    private let defaults: UserDefaults
+    private static let key = "champagne.steamSetupIncomplete"
+
+    public init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+    }
+
+    public func needsSetup(clientExists: Bool) -> Bool {
+        !clientExists || defaults.bool(forKey: Self.key)
+    }
+
+    public func begin() {
+        defaults.set(true, forKey: Self.key)
+    }
+
+    public func complete() {
+        defaults.removeObject(forKey: Self.key)
+    }
+}
+
 /// Stable storage for the Steam requests shown in discovery.
 public enum SteamInstallRequests {
     public static func decode(_ text: String) -> [Int] {
