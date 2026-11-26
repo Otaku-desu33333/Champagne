@@ -4,7 +4,9 @@ The code and app build are ready for an end-to-end check on the Mac that will
 run Champagne. This check uses the user's Steam account only inside Steam; do
 not share passwords or Steam Guard codes in diagnostics.
 
-1. Build the current `codex/steam-first-library` branch and open Discover.
+1. Choose the shared Xcode scheme `ChampagneAppOnly`, press Run, and open
+   Discover. This scheme builds and launches Champagne without starting the UI
+   test runner.
 2. Choose a small Windows game already owned by the signed-in account and
    select **Install in Champagne**.
 3. Confirm the game environment is created automatically and the Steam
