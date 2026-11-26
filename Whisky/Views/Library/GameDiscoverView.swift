@@ -208,6 +208,12 @@ struct GameDiscoverView: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                 }
+                if let issue = game.compatibilityIssue, !issue.isEmpty {
+                    Text(issue)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
 
             Spacer(minLength: 0)

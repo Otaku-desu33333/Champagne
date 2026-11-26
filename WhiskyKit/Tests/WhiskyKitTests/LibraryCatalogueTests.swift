@@ -22,6 +22,20 @@ import Testing
 
 @Suite("Library Catalogue Tests")
 struct LibraryCatalogueTests {
+    @Test("Discovery carries the critical compatibility issue for a Steam game")
+    func discoveryShowsCompatibilityIssue() throws {
+        let entry = GameDBEntry(
+            id: "game", title: "Game", steamAppId: 42, rating: .broken,
+            variants: [], knownIssues: [
+                KnownIssue(description: "Minor issue", severity: "minor"),
+                KnownIssue(description: "Cannot launch", severity: "critical")
+            ]
+        )
+        let game = try #require(GameCatalogSeed.compatibleSteamGames(from: [entry]).first)
+        #expect(game.compatibilityRating == .broken)
+        #expect(game.compatibilityIssue == "Cannot launch")
+    }
+
     @Test("Steam request storage deduplicates, migrates and dismisses individual games")
     func steamInstallRequests() {
         let stored = SteamInstallRequests.adding(42, to: "7,42,7,invalid,-1")

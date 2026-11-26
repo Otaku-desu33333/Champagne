@@ -65,6 +65,8 @@ public struct GameCatalogEntry: Identifiable, Hashable, Sendable, Codable {
     public let aliases: [String]
     /// Compatibility rating from the matching Wine profile, when one exists.
     public let compatibilityRating: CompatibilityRating?
+    /// An issue recorded in the compatibility profile, if available.
+    public let compatibilityIssue: String?
     /// ID of the matching compatibility profile in ``GameDBEntry``, if known.
     public let compatibilityProfileID: String?
     /// One title may be available from Steam and from an official publisher page.
@@ -76,6 +78,7 @@ public struct GameCatalogEntry: Identifiable, Hashable, Sendable, Codable {
         subtitle: String? = nil,
         aliases: [String] = [],
         compatibilityRating: CompatibilityRating? = nil,
+        compatibilityIssue: String? = nil,
         compatibilityProfileID: String? = nil,
         installSources: [GameInstallSource]
     ) {
@@ -84,6 +87,7 @@ public struct GameCatalogEntry: Identifiable, Hashable, Sendable, Codable {
         self.subtitle = subtitle
         self.aliases = aliases
         self.compatibilityRating = compatibilityRating
+        self.compatibilityIssue = compatibilityIssue
         self.compatibilityProfileID = compatibilityProfileID
         self.installSources = installSources
     }
@@ -102,6 +106,8 @@ public enum GameCatalogSeed {
                 subtitle: entry.subtitle,
                 aliases: entry.aliases ?? [],
                 compatibilityRating: entry.rating,
+                compatibilityIssue: entry.knownIssues?.first(where: { $0.severity == "critical" })?.description
+                    ?? entry.knownIssues?.first?.description,
                 compatibilityProfileID: entry.id,
                 installSources: [.steam(appID: appID)]
             )
