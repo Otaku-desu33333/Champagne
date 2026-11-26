@@ -191,6 +191,18 @@ struct SteamLibraryTests {
         #expect(after.contains { $0.appId == 271_590 })
     }
 
+    @Test("An install directory appearing after its manifest refreshes the library")
+    func installDirectoryAppearsAfterManifest() throws {
+        let (bottle, tempRoot) = try makeFixtureBottle()
+        defer { try? FileManager.default.removeItem(at: tempRoot) }
+        #expect(!SteamLibrary.enumerate(bottleURL: bottle).contains { $0.appId == 777 })
+        let root = try #require(SteamLibrary.detectInstall(bottleURL: bottle))
+        try FileManager.default.createDirectory(
+            at: root.appending(path: "steamapps/common/Ghost"), withIntermediateDirectories: true
+        )
+        #expect(SteamLibrary.enumerate(bottleURL: bottle).contains { $0.appId == 777 })
+    }
+
     @Test("Runtime payloads are not listed as games")
     func filtersRuntimePayloads() throws {
         let (bottle, tempRoot) = try makeFixtureBottle()

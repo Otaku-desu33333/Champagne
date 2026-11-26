@@ -68,8 +68,13 @@ public struct SteamAppManifest: Equatable, Sendable {
     /// - Returns: `nil` if the file can't be read, isn't valid VDF, or lacks
     ///   the required `appid`, `name`, or `installdir` fields.
     public init?(contentsOf url: URL) {
-        guard let text = try? String(contentsOf: url, encoding: .utf8),
-              let root = try? VDFParser.parse(text),
+        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+        self.init(text: text)
+    }
+
+    /// Parses a single snapshot of a manifest's text.
+    init?(text: String) {
+        guard let root = try? VDFParser.parse(text),
               let appState = root["appstate"]?.objectValue,
               let appId = appState["appid"]?.intValue,
               let name = appState["name"]?.stringValue,

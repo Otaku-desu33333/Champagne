@@ -51,7 +51,7 @@ public enum SteamLibrary {
                   let parsed = try? VDFParser.parse(text),
                   let state = parsed["appstate"]?.objectValue,
                   state["appid"]?.intValue == appID,
-                  let manifest = SteamAppManifest(contentsOf: file)
+                  let manifest = SteamAppManifest(text: text)
             else { continue }
             let directory = steamApps.appending(path: "common").appending(path: manifest.installDir)
             var isDirectory: ObjCBool = false
@@ -137,6 +137,8 @@ public enum SteamLibrary {
             let steamapps = library.appending(path: "steamapps")
             let modified = try? steamapps.resourceValues(forKeys: [.contentModificationDateKey])
                 .contentModificationDate
+            let commonModified = try? steamapps.appending(path: "common")
+                .resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
             let files = (try? FileManager.default.contentsOfDirectory(
                 at: steamapps, includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey]
             )) ?? []
@@ -146,7 +148,7 @@ public enum SteamLibrary {
                 let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
                 return "\(url.lastPathComponent):\(values?.contentModificationDate?.timeIntervalSince1970 ?? 0):\(values?.fileSize ?? 0)"
             }
-            return "\(steamapps.path(percentEncoded: false))@\(modified?.timeIntervalSince1970 ?? 0)|\(manifests.joined(separator: "|"))"
+            return "\(steamapps.path(percentEncoded: false))@\(modified?.timeIntervalSince1970 ?? 0):\(commonModified?.timeIntervalSince1970 ?? 0)|\(manifests.joined(separator: "|"))"
         }
     }
 
