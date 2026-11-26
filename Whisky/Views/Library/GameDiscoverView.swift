@@ -27,8 +27,6 @@ struct GameDiscoverView: View {
     @EnvironmentObject private var bottleVM: BottleVM
     @State private var searchText = ""
     @State private var installing = false
-    @State private var status: String?
-    @State private var installError: String?
     @AppStorage("champagne.pendingSteamAppID") private var pendingAppID = 0
     @State private var installProgress: SteamLibrary.InstallProgress?
 
@@ -81,12 +79,12 @@ struct GameDiscoverView: View {
             }
         }
         .alert("Steam setup", isPresented: Binding(
-            get: { installError != nil },
-            set: { if !$0 { installError = nil } }
+            get: { bottleVM.steamSetupError != nil },
+            set: { if !$0 { bottleVM.steamSetupError = nil } }
         )) {
-            Button("OK", role: .cancel) { installError = nil }
+            Button("OK", role: .cancel) { bottleVM.steamSetupError = nil }
         } message: {
-            Text(installError ?? "")
+            Text(bottleVM.steamSetupError ?? "")
         }
     }
 
@@ -98,9 +96,9 @@ struct GameDiscoverView: View {
                 .font(.body)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            if let status {
+            if let status = bottleVM.steamSetupStatus {
                 HStack {
-                    if installing { ProgressView().controlSize(.small) }
+                    if bottleVM.steamSetupToken != nil { ProgressView().controlSize(.small) }
                     Text(status).foregroundStyle(.secondary)
                 }
             }
@@ -191,7 +189,7 @@ struct GameDiscoverView: View {
                 Label("Install with Steam", systemImage: "arrow.down.circle")
             }
             .buttonStyle(.borderedProminent)
-            .disabled(installing)
+            .disabled(bottleVM.steamSetupToken != nil)
         case let .publisherDownloadPage(url):
             Button {
                 openURL(url)
@@ -220,22 +218,22 @@ struct GameDiscoverView: View {
             bottleVM.bottles.first { $0.url.standardizedFileURL == saved.standardizedFileURL && $0.isAvailable }
         }
         if savedURL != nil && bottle == nil {
-            installError = "Your Champagne game environment could not be found. Restore or re-import it before installing another game."
+            bottleVM.steamSetupError = "Your Champagne game environment could not be found. Restore or re-import it before installing another game."
             return
         }
         if bottle == nil {
-            status = "Preparing your game environment…"
+            bottleVM.steamSetupStatus = "Preparing your game environment…"
             bottle = await bottleVM.createManagedBottle(
                 bottleName: "Champagne Games", winVersion: .win10, bottleURL: BottleData.defaultBottleDir
             )
-            guard let bottle else { status = nil; return }
+            guard let bottle else { bottleVM.steamSetupStatus = nil; return }
             UserDefaults.standard.set(bottle.url, forKey: key)
         }
-        guard let bottle else { status = nil; return }
+        guard let bottle else { bottleVM.steamSetupStatus = nil; return }
 
         do {
             if SteamLibrary.detectInstall(bottleURL: bottle.url) == nil {
-                status = "Downloading Steam…"
+                bottleVM.steamSetupStatus = "Downloading Steam…"
                 let url = URL(string: "https://cdn.fastly.steamstatic.com/client/installer/SteamSetup.exe")!
                 let (download, response) = try await URLSession.shared.download(from: url)
                 guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
@@ -245,7 +243,7 @@ struct GameDiscoverView: View {
                     .appendingPathComponent(UUID().uuidString).appendingPathExtension("exe")
                 try FileManager.default.moveItem(at: download, to: installer)
                 defer { try? FileManager.default.removeItem(at: installer) }
-                status = "Complete Steam setup in the installer window."
+                bottleVM.steamSetupStatus = "Complete Steam setup in the installer window."
                 let result = try await Wine.runProgram(at: installer, bottle: bottle)
                 guard result.exitCode == 0, SteamLibrary.detectInstall(bottleURL: bottle.url) != nil else {
                     throw NSError(domain: "ChampagneSteamSetup", code: 1, userInfo: [
@@ -255,7 +253,7 @@ struct GameDiscoverView: View {
             }
             guard let root = SteamLibrary.detectInstall(bottleURL: bottle.url) else { return }
             pendingAppID = appID
-            status = "Sign in to Steam and follow its install prompt."
+            bottleVM.steamSetupStatus = "Sign in to Steam and follow its install prompt."
             let result = try await Wine.runProgram(
                 at: root.appending(path: "steam.exe"), args: ["steam://install/\(appID)"], bottle: bottle,
                 onOutput: { output in
@@ -271,8 +269,12 @@ struct GameDiscoverView: View {
                 ])
             }
         } catch {
-            status = nil
-            installError = error.localizedDescription
+            // A later request may already be in progress after this launch
+            // started. Do not overwrite its status with an older result.
+            if bottleVM.steamSetupToken == nil || bottleVM.steamSetupToken == token {
+                bottleVM.steamSetupStatus = nil
+                bottleVM.steamSetupError = error.localizedDescription
+            }
         }
     }
 }
