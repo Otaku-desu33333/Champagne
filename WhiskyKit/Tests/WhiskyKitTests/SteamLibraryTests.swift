@@ -127,6 +127,19 @@ struct SteamLibraryTests {
         #expect(root.lastPathComponent == "Steam")
     }
 
+    @Test("Install progress prefers a completed copy in another Steam library")
+    func progressPrefersInstalledCopy() throws {
+        let (bottle, tempRoot) = try makeFixtureBottle()
+        defer { try? FileManager.default.removeItem(at: tempRoot) }
+        let primary = try #require(SteamLibrary.detectInstall(bottleURL: bottle)).appending(path: "steamapps")
+        try Data(acf(appId: 4_576_510, name: "Game", installDir: "Casualties Unknown Demo", stateFlags: 2).utf8)
+            .write(to: primary.appending(path: "appmanifest_4576510.acf"))
+        let secondary = tempRoot.appending(path: "second-library/steamapps/appmanifest_4576510.acf")
+        try Data(acf(appId: 4_576_510, name: "Game", installDir: "ELDEN RING", stateFlags: 4).utf8)
+            .write(to: secondary)
+        #expect(SteamLibrary.installProgress(appID: 4_576_510, bottleURL: bottle)?.installed == true)
+    }
+
     @Test("Returns nil for a bottle without Steam")
     func noSteamNoInstall() throws {
         let tempDir = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)

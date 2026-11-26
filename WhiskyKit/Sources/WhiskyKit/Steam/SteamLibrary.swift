@@ -44,6 +44,7 @@ public enum SteamLibrary {
 
     public static func installProgress(appID: Int, bottleURL: URL) -> InstallProgress? {
         guard appID > 0, let steamRoot = detectInstall(bottleURL: bottleURL) else { return nil }
+        var pending: InstallProgress?
         for root in libraryRoots(steamRoot: steamRoot, bottleURL: bottleURL) {
             let steamApps = root.appending(path: "steamapps")
             let file = steamApps.appending(path: "appmanifest_\(appID).acf")
@@ -60,9 +61,11 @@ public enum SteamLibrary {
                 && isDirectory.boolValue
             let downloaded = state["bytesdownloaded"]?.stringValue.flatMap(UInt64.init)
             let total = state["bytestodownload"]?.stringValue.flatMap(UInt64.init)
-            return InstallProgress(installed: installed, downloadedBytes: downloaded, totalBytes: total)
+            let progress = InstallProgress(installed: installed, downloadedBytes: downloaded, totalBytes: total)
+            if installed { return progress }
+            if pending == nil { pending = progress }
         }
-        return nil
+        return pending
     }
 
     /// Candidate Steam install locations under `drive_c`.
