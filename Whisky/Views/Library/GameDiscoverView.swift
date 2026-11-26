@@ -160,8 +160,8 @@ struct GameDiscoverView: View {
                         .foregroundStyle(.secondary)
                 } else {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("\(title): waiting for Steam to start the install.")
-                        Text("Sign in and accept any purchase or install prompts in Steam. If nothing happens, select Install with Steam again.")
+                        Text("\(title): waiting for Steam to verify access and begin the download.")
+                        Text("Sign in if asked. Continue only if Steam offers Install; cancel if it offers Purchase. If no prompt appears, select Install in Champagne again.")
                     }
                     .foregroundStyle(.secondary)
                 }
