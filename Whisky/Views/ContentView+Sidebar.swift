@@ -34,45 +34,47 @@ extension ContentView {
                 // A bottle is a Wine prefix, so it belongs under a heading rather
                 // than being the whole sidebar. With one bottle this is the row
                 // that reaches its config; with several it is also the switcher.
-                Section("sidebar.bottles") {
-                    ForEach(sortedBottles) { bottle in
-                        Group {
-                            if bottle.inFlight {
-                                HStack {
-                                    Text(bottle.settings.name)
-                                    Spacer()
-                                    ProgressView().controlSize(.small)
-                                }
-                                .opacity(0.5)
-                            } else if !bottle.isAvailable {
-                                HStack {
-                                    Image(systemName: "exclamationmark.triangle.fill")
-                                        .foregroundStyle(.orange)
-                                        .font(.caption)
-                                    Text(bottle.settings.name)
-                                    Spacer()
-                                    Button {
-                                        Task { await bottle.remove(delete: false) }
-                                    } label: {
-                                        Image(systemName: "xmark.circle")
-                                            .foregroundStyle(.secondary)
+                if !sortedBottles.isEmpty {
+                    Section("sidebar.bottles") {
+                        ForEach(sortedBottles) { bottle in
+                            Group {
+                                if bottle.inFlight {
+                                    HStack {
+                                        Text(bottle.settings.name)
+                                        Spacer()
+                                        ProgressView().controlSize(.small)
                                     }
-                                    .buttonStyle(.plain)
-                                    .help("button.removeFromList.help")
+                                    .opacity(0.5)
+                                } else if !bottle.isAvailable {
+                                    HStack {
+                                        Image(systemName: "exclamationmark.triangle.fill")
+                                            .foregroundStyle(.orange)
+                                            .font(.caption)
+                                        Text(bottle.settings.name)
+                                        Spacer()
+                                        Button {
+                                            Task { await bottle.remove(delete: false) }
+                                        } label: {
+                                            Image(systemName: "xmark.circle")
+                                                .foregroundStyle(.secondary)
+                                        }
+                                        .buttonStyle(.plain)
+                                        .help("button.removeFromList.help")
+                                    }
+                                    .opacity(0.6)
+                                    .selectionDisabled(true)
+                                } else {
+                                    BottleListEntry(
+                                        bottle: bottle,
+                                        selected: $selected,
+                                        refresh: $triggerRefresh,
+                                        toast: $toast
+                                    )
+                                    .accessibilityIdentifier("sidebar.bottle")
                                 }
-                                .opacity(0.6)
-                                .selectionDisabled(true)
-                            } else {
-                                BottleListEntry(
-                                    bottle: bottle,
-                                    selected: $selected,
-                                    refresh: $triggerRefresh,
-                                    toast: $toast
-                                )
-                                .accessibilityIdentifier("sidebar.bottle")
                             }
+                            .id(bottle.url)
                         }
-                        .id(bottle.url)
                     }
                 }
             }
@@ -164,7 +166,8 @@ extension ContentView {
     }
 
     var sortedBottles: [Bottle] {
-        bottleVM.bottles.sorted()
+        let managed = bottleVM.managedSteamBottleURL?.standardizedFileURL
+        return bottleVM.bottles.filter { $0.url.standardizedFileURL != managed }.sorted()
     }
 }
 

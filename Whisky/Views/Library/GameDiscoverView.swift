@@ -72,7 +72,7 @@ struct GameDiscoverView: View {
         .task(id: pendingAppID) {
             installProgress = nil
             while pendingAppID > 0 && !Task.isCancelled {
-                if let url = UserDefaults.standard.url(forKey: "champagne.managedSteamBottle") {
+                if let url = bottleVM.managedSteamBottleURL {
                     installProgress = SteamLibrary.installProgress(appID: pendingAppID, bottleURL: url)
                     if installProgress?.installed == true { bottleVM.steamSetupStatus = nil }
                 }
@@ -224,8 +224,7 @@ struct GameDiscoverView: View {
                 bottleVM.steamSetupToken = nil
             }
         }
-        let key = "champagne.managedSteamBottle"
-        let savedURL = UserDefaults.standard.url(forKey: key)
+        let savedURL = bottleVM.managedSteamBottleURL
         var bottle = savedURL.flatMap { saved in
             bottleVM.bottles.first { $0.url.standardizedFileURL == saved.standardizedFileURL && $0.isAvailable }
         }
@@ -239,7 +238,7 @@ struct GameDiscoverView: View {
                 bottleName: "Champagne Games", winVersion: .win10, bottleURL: BottleData.defaultBottleDir
             )
             guard let bottle else { bottleVM.steamSetupStatus = nil; return }
-            UserDefaults.standard.set(bottle.url, forKey: key)
+            bottleVM.rememberManagedSteamBottle(bottle.url)
         }
         guard let bottle else { bottleVM.steamSetupStatus = nil; return }
 

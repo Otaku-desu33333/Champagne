@@ -90,6 +90,12 @@ final class BottleVM: ObservableObject {
     var latestSteamRequest: UUID?
     @Published var steamSetupStatus: String?
     @Published var steamSetupError: String?
+    @Published var managedSteamBottleURL: URL? = UserDefaults.standard.url(forKey: "champagne.managedSteamBottle")
+
+    func rememberManagedSteamBottle(_ url: URL) {
+        UserDefaults.standard.set(url, forKey: "champagne.managedSteamBottle")
+        managedSteamBottleURL = url
+    }
 
     struct BottleCreationAlert: Identifiable {
         let id = UUID()
