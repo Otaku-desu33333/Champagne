@@ -22,6 +22,20 @@ import Testing
 
 @Suite("Library Catalogue Tests")
 struct LibraryCatalogueTests {
+    @Test("Bundled discovery entries have unique positive Steam IDs")
+    func bundledDiscoveryTargetsAreUnique() {
+        let profiles = GameDBLoader.loadDefaults()
+        let steamProfiles = profiles.filter { $0.steamAppId != nil }
+        let ids = steamProfiles.compactMap(\.steamAppId)
+        #expect(!ids.isEmpty)
+        #expect(ids.allSatisfy { $0 > 0 })
+        #expect(Set(ids).count == ids.count)
+        let catalog = GameCatalogSeed.compatibleSteamGames(from: profiles)
+        #expect(catalog.count == ids.count)
+        #expect(Set(catalog.map(\.id)).count == catalog.count)
+        #expect(catalog.allSatisfy { !$0.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
+    }
+
     @Test("Interrupted Steam setup retries even if the client file exists")
     func steamSetupMarkerSurvivesNewInstance() throws {
         let suite = "champagne.setup-test.\(UUID().uuidString)"
