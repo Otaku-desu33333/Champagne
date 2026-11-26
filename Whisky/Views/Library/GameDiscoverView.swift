@@ -172,12 +172,15 @@ struct GameDiscoverView: View {
 
     @MainActor
     private func installSteamGame(_ appID: Int) async {
-        guard !installing, !bottleVM.steamSetupInProgress else { return }
+        guard !installing, bottleVM.steamSetupToken == nil else { return }
+        let token = UUID()
         installing = true
-        bottleVM.steamSetupInProgress = true
+        bottleVM.steamSetupToken = token
         defer {
-            installing = false
-            bottleVM.steamSetupInProgress = false
+            if bottleVM.steamSetupToken == token {
+                installing = false
+                bottleVM.steamSetupToken = nil
+            }
         }
         let key = "champagne.managedSteamBottle"
         let savedURL = UserDefaults.standard.url(forKey: key)
@@ -221,7 +224,13 @@ struct GameDiscoverView: View {
             guard let root = SteamLibrary.detectInstall(bottleURL: bottle.url) else { return }
             status = "Sign in to Steam and follow its install prompt."
             let result = try await Wine.runProgram(
-                at: root.appending(path: "steam.exe"), args: ["steam://install/\(appID)"], bottle: bottle
+                at: root.appending(path: "steam.exe"), args: ["steam://install/\(appID)"], bottle: bottle,
+                onOutput: { output in
+                    if output == .started, bottleVM.steamSetupToken == token {
+                        bottleVM.steamSetupToken = nil
+                        installing = false
+                    }
+                }
             )
             if result.exitCode != 0 {
                 throw NSError(domain: "ChampagneSteamSetup", code: Int(result.exitCode), userInfo: [
