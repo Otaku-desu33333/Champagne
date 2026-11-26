@@ -172,12 +172,21 @@ struct GameDiscoverView: View {
 
     @MainActor
     private func installSteamGame(_ appID: Int) async {
-        guard !installing else { return }
+        guard !installing, !bottleVM.steamSetupInProgress else { return }
         installing = true
-        defer { installing = false }
+        bottleVM.steamSetupInProgress = true
+        defer {
+            installing = false
+            bottleVM.steamSetupInProgress = false
+        }
         let key = "champagne.managedSteamBottle"
-        var bottle = UserDefaults.standard.url(forKey: key).flatMap { saved in
+        let savedURL = UserDefaults.standard.url(forKey: key)
+        var bottle = savedURL.flatMap { saved in
             bottleVM.bottles.first { $0.url.standardizedFileURL == saved.standardizedFileURL && $0.isAvailable }
+        }
+        if savedURL != nil && bottle == nil {
+            installError = "Your Champagne game environment could not be found. Restore or re-import it before installing another game."
+            return
         }
         if bottle == nil {
             status = "Preparing your game environment…"

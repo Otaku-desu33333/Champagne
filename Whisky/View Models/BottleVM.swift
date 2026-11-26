@@ -85,6 +85,8 @@ final class BottleVM: ObservableObject {
     var bottlesList = BottleData()
     @Published var bottles: [Bottle] = []
     @Published var bottleCreationAlert: BottleCreationAlert?
+    /// Serializes Steam setup across navigation and multiple windows.
+    var steamSetupInProgress = false
 
     struct BottleCreationAlert: Identifiable {
         let id = UUID()
