@@ -253,8 +253,19 @@ struct GameDiscoverView: View {
                 bottleVM.steamSetupStatus = "Downloading Steam…"
                 let url = URL(string: "https://cdn.fastly.steamstatic.com/client/installer/SteamSetup.exe")!
                 let (download, response) = try await URLSession.shared.download(from: url)
-                guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
-                    throw CocoaError(.fileReadUnknown)
+                guard let http = response as? HTTPURLResponse, http.statusCode == 200,
+                      http.url?.scheme?.lowercased() == "https" else {
+                    throw NSError(domain: "ChampagneSteamSetup", code: 2, userInfo: [
+                        NSLocalizedDescriptionKey: "Steam could not be downloaded. Check your connection and try again."
+                    ])
+                }
+                let handle = try FileHandle(forReadingFrom: download)
+                let signature = try handle.read(upToCount: 2)
+                try handle.close()
+                guard signature == Data([0x4d, 0x5a]) else {
+                    throw NSError(domain: "ChampagneSteamSetup", code: 3, userInfo: [
+                        NSLocalizedDescriptionKey: "The Steam download was not a Windows installer. Please try again."
+                    ])
                 }
                 let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
                 try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
