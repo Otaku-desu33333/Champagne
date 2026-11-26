@@ -34,6 +34,10 @@ struct LibraryCatalogueTests {
         #expect(catalog.count == ids.count)
         #expect(Set(catalog.map(\.id)).count == catalog.count)
         #expect(catalog.allSatisfy { !$0.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
+        let sources = Dictionary(uniqueKeysWithValues: catalog.map { ($0.id, $0.installSources) })
+        #expect(sources["injustice-2"] == [.steam(appID: 627_270)])
+        #expect(sources["trackmania-turbo"] == [.steam(appID: 375_900)])
+        #expect(sources["killer7"] == [.steam(appID: 868_520)])
     }
 
     @Test("Interrupted Steam setup retries even if the client file exists")
