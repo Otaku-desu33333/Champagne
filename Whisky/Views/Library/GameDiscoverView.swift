@@ -30,6 +30,7 @@ struct GameDiscoverView: View {
     @State private var installing = false
     @AppStorage("champagne.pendingSteamAppID") private var pendingAppID = 0
     @State private var installProgress: SteamLibrary.InstallProgress?
+    @State private var installedSteamIDs: Set<Int> = []
 
     private static let catalog = GameCatalogSeed.compatibleSteamGames(from: GameDBLoader.loadDefaults())
 
@@ -70,6 +71,17 @@ struct GameDiscoverView: View {
         .navigationTitle("discover.title")
         .searchable(text: $searchText, prompt: Text("discover.search"))
         .accessibilityIdentifier("gameDiscoverView")
+        .task(id: bottleVM.bottles.filter(\.isAvailable).map(\.url)) {
+            while !Task.isCancelled {
+                let urls = bottleVM.bottles.filter(\.isAvailable).map(\.url)
+                let installed = await Task.detached {
+                    Set(urls.flatMap { SteamLibrary.enumerate(bottleURL: $0).map(\.appId) })
+                }.value
+                guard !Task.isCancelled else { return }
+                installedSteamIDs = installed
+                do { try await Task.sleep(for: .seconds(10)) } catch { return }
+            }
+        }
         .task(id: pendingAppID) {
             installProgress = nil
             while pendingAppID > 0 && !Task.isCancelled {
@@ -195,7 +207,7 @@ struct GameDiscoverView: View {
     private func installButton(for source: GameInstallSource) -> some View {
         switch source {
         case let .steam(appID):
-            if pendingAppID == appID, installProgress?.installed == true {
+            if installedSteamIDs.contains(appID) || (pendingAppID == appID && installProgress?.installed == true) {
                 Button(action: showLibrary) {
                     Label("Open library", systemImage: "square.grid.2x2")
                 }
