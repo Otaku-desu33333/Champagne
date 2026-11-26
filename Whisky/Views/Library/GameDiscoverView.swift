@@ -313,7 +313,8 @@ struct GameDiscoverView: View {
                 let url = URL(string: "https://cdn.fastly.steamstatic.com/client/installer/SteamSetup.exe")!
                 let (download, response) = try await URLSession.shared.download(from: url)
                 guard let http = response as? HTTPURLResponse, http.statusCode == 200,
-                      http.url?.scheme?.lowercased() == "https" else {
+                      http.url?.scheme?.lowercased() == "https",
+                      http.url?.host?.lowercased() == "cdn.fastly.steamstatic.com" else {
                     throw NSError(domain: "ChampagneSteamSetup", code: 2, userInfo: [
                         NSLocalizedDescriptionKey: "Steam could not be downloaded. Check your connection and try again."
                     ])
