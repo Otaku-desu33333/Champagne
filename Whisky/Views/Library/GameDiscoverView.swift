@@ -29,6 +29,8 @@ struct GameDiscoverView: View {
     @State private var installing = false
     @State private var status: String?
     @State private var installError: String?
+    @AppStorage("champagne.pendingSteamAppID") private var pendingAppID = 0
+    @State private var installProgress: SteamLibrary.InstallProgress?
 
     private static let catalog = GameCatalogSeed.compatibleSteamGames(from: GameDBLoader.loadDefaults())
 
@@ -69,6 +71,15 @@ struct GameDiscoverView: View {
         .navigationTitle("discover.title")
         .searchable(text: $searchText, prompt: Text("discover.search"))
         .accessibilityIdentifier("gameDiscoverView")
+        .task(id: pendingAppID) {
+            installProgress = nil
+            while pendingAppID > 0 && !Task.isCancelled {
+                if let url = UserDefaults.standard.url(forKey: "champagne.managedSteamBottle") {
+                    installProgress = SteamLibrary.installProgress(appID: pendingAppID, bottleURL: url)
+                }
+                try? await Task.sleep(for: .seconds(5))
+            }
+        }
         .alert("Steam setup", isPresented: Binding(
             get: { installError != nil },
             set: { if !$0 { installError = nil } }
@@ -91,6 +102,27 @@ struct GameDiscoverView: View {
                 HStack {
                     if installing { ProgressView().controlSize(.small) }
                     Text(status).foregroundStyle(.secondary)
+                }
+            }
+            if pendingAppID > 0 {
+                let title = Self.catalog.first { game in
+                    game.installSources.contains(.steam(appID: pendingAppID))
+                }?.title ?? String(pendingAppID)
+                if let progress = installProgress, progress.installed {
+                    Text("\(title) is installed. Find it in your library.")
+                        .foregroundStyle(.secondary)
+                } else if let progress = installProgress,
+                          let downloaded = progress.downloadedBytes,
+                          let total = progress.totalBytes, total > 0, downloaded <= total {
+                    VStack(alignment: .leading) {
+                        Text("\(title): Steam download")
+                        ProgressView(value: Double(downloaded), total: Double(total))
+                        Text("\(ByteCountFormatter.string(fromByteCount: Int64(clamping: downloaded), countStyle: .file)) / \(ByteCountFormatter.string(fromByteCount: Int64(clamping: total), countStyle: .file))")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                } else {
+                    Text("\(title): waiting for Steam to start the install.")
+                        .foregroundStyle(.secondary)
                 }
             }
         }
@@ -222,6 +254,7 @@ struct GameDiscoverView: View {
                 }
             }
             guard let root = SteamLibrary.detectInstall(bottleURL: bottle.url) else { return }
+            pendingAppID = appID
             status = "Sign in to Steam and follow its install prompt."
             let result = try await Wine.runProgram(
                 at: root.appending(path: "steam.exe"), args: ["steam://install/\(appID)"], bottle: bottle,

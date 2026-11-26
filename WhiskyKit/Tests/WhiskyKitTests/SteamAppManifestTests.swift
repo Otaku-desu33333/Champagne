@@ -39,6 +39,28 @@ private func acf(
 
 @Suite("SteamAppManifest Tests")
 struct SteamAppManifestTests {
+    @Test("Install progress and library refresh follow a changing Steam manifest")
+    func installProgressAndRefresh() throws {
+        let prefix = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: prefix) }
+        let root = prefix.appending(path: "drive_c/Program Files (x86)/Steam")
+        let apps = root.appending(path: "steamapps")
+        try FileManager.default.createDirectory(at: apps.appending(path: "common/Game"), withIntermediateDirectories: true)
+        try Data().write(to: root.appending(path: "steam.exe"))
+        let file = apps.appending(path: "appmanifest_42.acf")
+        let downloading = acf(appId: 42, name: "Game", installDir: "Game", stateFlags: 2)
+            .replacingOccurrences(of: "\"buildid\"", with: "\"BytesDownloaded\" \"50\"\n    \"BytesToDownload\" \"100\"\n    \"buildid\"")
+        try Data(downloading.utf8).write(to: file)
+        let progress = try #require(SteamLibrary.installProgress(appID: 42, bottleURL: prefix))
+        #expect(!progress.installed)
+        #expect(progress.downloadedBytes == 50 && progress.totalBytes == 100)
+        #expect(SteamLibrary.enumerate(bottleURL: prefix).isEmpty)
+
+        try Data(acf(appId: 42, name: "Game", installDir: "Game", stateFlags: 4).utf8).write(to: file)
+        #expect(SteamLibrary.installProgress(appID: 42, bottleURL: prefix)?.installed == true)
+        #expect(SteamLibrary.enumerate(bottleURL: prefix).map(\.appId) == [42])
+    }
+
     @Test("Parses a full manifest file")
     func parsesFullManifest() throws {
         let tempDir = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)

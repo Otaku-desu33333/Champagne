@@ -34,6 +34,37 @@ public struct SteamGame: Identifiable, Equatable, Sendable {
 /// Discovers a Windows Steam installation inside a Wine bottle and
 /// enumerates its installed games across all configured library folders.
 public enum SteamLibrary {
+    /// A snapshot of Steam's own install record. Missing or unreadable records
+    /// return nil; they do not prove that Steam rejected an install request.
+    public struct InstallProgress: Equatable, Sendable {
+        public let installed: Bool
+        public let downloadedBytes: UInt64?
+        public let totalBytes: UInt64?
+    }
+
+    public static func installProgress(appID: Int, bottleURL: URL) -> InstallProgress? {
+        guard appID > 0, let steamRoot = detectInstall(bottleURL: bottleURL) else { return nil }
+        for root in libraryRoots(steamRoot: steamRoot, bottleURL: bottleURL) {
+            let steamApps = root.appending(path: "steamapps")
+            let file = steamApps.appending(path: "appmanifest_\(appID).acf")
+            guard let text = try? String(contentsOf: file, encoding: .utf8),
+                  let parsed = try? VDFParser.parse(text),
+                  let state = parsed["appstate"]?.objectValue,
+                  state["appid"]?.intValue == appID,
+                  let manifest = SteamAppManifest(contentsOf: file)
+            else { continue }
+            let directory = steamApps.appending(path: "common").appending(path: manifest.installDir)
+            var isDirectory: ObjCBool = false
+            let installed = manifest.isFullyInstalled && isSafePathComponent(manifest.installDir)
+                && FileManager.default.fileExists(atPath: directory.path(percentEncoded: false), isDirectory: &isDirectory)
+                && isDirectory.boolValue
+            let downloaded = state["bytesdownloaded"]?.stringValue.flatMap(UInt64.init)
+            let total = state["bytestodownload"]?.stringValue.flatMap(UInt64.init)
+            return InstallProgress(installed: installed, downloadedBytes: downloaded, totalBytes: total)
+        }
+        return nil
+    }
+
     /// Candidate Steam install locations under `drive_c`.
     private static let installCandidates = [
         "Program Files (x86)/Steam",
@@ -99,17 +130,23 @@ public enum SteamLibrary {
 
     /// A stamp that changes whenever a library's contents could have.
     ///
-    /// The modification date of each `steamapps` directory, which moves when a
-    /// manifest is added or removed, so installing, uninstalling or moving a
-    /// game invalidates it. Merely playing one does not, which is the point: a
-    /// refresh that changed nothing costs a handful of `stat` calls instead of
-    /// parsing every manifest in every library.
+    /// Include manifest metadata: Steam can complete a download by rewriting an
+    /// existing manifest without changing the parent directory's timestamp.
     private static func revision(of libraries: [URL]) -> [String] {
         libraries.map { library in
             let steamapps = library.appending(path: "steamapps")
             let modified = try? steamapps.resourceValues(forKeys: [.contentModificationDateKey])
                 .contentModificationDate
-            return "\(steamapps.path(percentEncoded: false))@\(modified?.timeIntervalSince1970 ?? 0)"
+            let files = (try? FileManager.default.contentsOfDirectory(
+                at: steamapps, includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey]
+            )) ?? []
+            let manifests = files.filter {
+                $0.lastPathComponent.hasPrefix("appmanifest_") && $0.pathExtension == "acf"
+            }.sorted { $0.lastPathComponent < $1.lastPathComponent }.map { url in
+                let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
+                return "\(url.lastPathComponent):\(values?.contentModificationDate?.timeIntervalSince1970 ?? 0):\(values?.fileSize ?? 0)"
+            }
+            return "\(steamapps.path(percentEncoded: false))@\(modified?.timeIntervalSince1970 ?? 0)|\(manifests.joined(separator: "|"))"
         }
     }
 
