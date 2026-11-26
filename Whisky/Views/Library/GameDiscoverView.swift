@@ -28,9 +28,22 @@ struct GameDiscoverView: View {
     var showLibrary: () -> Void
     @State private var searchText = ""
     @State private var installing = false
-    @AppStorage("champagne.pendingSteamAppID") private var pendingAppID = 0
-    @State private var installProgress: SteamLibrary.InstallProgress?
+    @AppStorage("champagne.pendingSteamAppID") private var legacyPendingAppID = 0
+    @AppStorage("champagne.pendingSteamAppIDs") private var pendingIDsText = ""
+    @State private var installProgress: [Int: SteamLibrary.InstallProgress] = [:]
     @State private var installedSteamIDs: Set<Int> = []
+
+    private var pendingAppIDs: [Int] {
+        var seen = Set<Int>()
+        return pendingIDsText.split(separator: ",").compactMap { Int($0) }
+            .filter { $0 > 0 && seen.insert($0).inserted }
+    }
+
+    private func rememberPending(_ appID: Int) {
+        var ids = pendingAppIDs.filter { $0 != appID }
+        ids.append(appID)
+        pendingIDsText = ids.map(String.init).joined(separator: ",")
+    }
 
     private static let catalog = GameCatalogSeed.compatibleSteamGames(from: GameDBLoader.loadDefaults())
 
@@ -82,21 +95,29 @@ struct GameDiscoverView: View {
                 do { try await Task.sleep(for: .seconds(10)) } catch { return }
             }
         }
-        .task(id: pendingAppID) {
-            installProgress = nil
-            let appID = pendingAppID
-            while appID > 0 && !Task.isCancelled {
+        .onAppear {
+            if legacyPendingAppID > 0 {
+                rememberPending(legacyPendingAppID)
+                legacyPendingAppID = 0
+            }
+        }
+        .task(id: pendingIDsText) {
+            let ids = pendingAppIDs
+            installProgress = [:]
+            while !ids.isEmpty && !Task.isCancelled {
                 if let url = bottleVM.managedSteamBottleURL {
                     let progress = await Task.detached {
-                        SteamLibrary.installProgress(appID: appID, bottleURL: url)
+                        Dictionary(uniqueKeysWithValues: ids.compactMap { id in
+                            SteamLibrary.installProgress(appID: id, bottleURL: url).map { (id, $0) }
+                        })
                     }.value
-                    guard !Task.isCancelled, pendingAppID == appID else { return }
+                    guard !Task.isCancelled, pendingAppIDs == ids else { return }
                     installProgress = progress
-                    if progress?.installed == true && bottleVM.steamSetupToken == nil {
+                    if ids.allSatisfy({ progress[$0]?.installed == true }) && bottleVM.steamSetupToken == nil {
                         bottleVM.steamSetupStatus = nil
                     }
                 } else {
-                    installProgress = nil
+                    installProgress = [:]
                 }
                 do { try await Task.sleep(for: .seconds(5)) } catch { return }
             }
@@ -125,11 +146,11 @@ struct GameDiscoverView: View {
                     Text(status).foregroundStyle(.secondary)
                 }
             }
-            if pendingAppID > 0 {
+            ForEach(pendingAppIDs, id: \.self) { appID in
                 let title = Self.catalog.first { game in
-                    game.installSources.contains(.steam(appID: pendingAppID))
-                }?.title ?? String(pendingAppID)
-                if let progress = installProgress,
+                    game.installSources.contains(.steam(appID: appID))
+                }?.title ?? String(appID)
+                if let progress = installProgress[appID],
                           let downloaded = progress.downloadedBytes,
                           let total = progress.totalBytes, total > 0, downloaded < total {
                     VStack(alignment: .leading) {
@@ -138,7 +159,7 @@ struct GameDiscoverView: View {
                         Text("\(ByteCountFormatter.string(fromByteCount: Int64(clamping: downloaded), countStyle: .file)) / \(ByteCountFormatter.string(fromByteCount: Int64(clamping: total), countStyle: .file))")
                             .font(.caption).foregroundStyle(.secondary)
                     }
-                } else if let progress = installProgress, progress.installed {
+                } else if let progress = installProgress[appID], progress.installed {
                     Text("\(title) is installed. Find it in your library.")
                         .foregroundStyle(.secondary)
                 } else {
@@ -149,9 +170,7 @@ struct GameDiscoverView: View {
                     .foregroundStyle(.secondary)
                 }
                 Button("Dismiss status") {
-                    pendingAppID = 0
-                    bottleVM.steamSetupStatus = nil
-                    bottleVM.latestSteamRequest = nil
+                    pendingIDsText = pendingAppIDs.filter { $0 != appID }.map(String.init).joined(separator: ",")
                 }
                 .buttonStyle(.link)
                 .help("This only hides the status; Steam continues any active download.")
@@ -216,7 +235,7 @@ struct GameDiscoverView: View {
     private func installButton(for source: GameInstallSource) -> some View {
         switch source {
         case let .steam(appID):
-            if installedSteamIDs.contains(appID) || (pendingAppID == appID && installProgress?.installed == true) {
+            if installedSteamIDs.contains(appID) || installProgress[appID]?.installed == true {
                 Button(action: showLibrary) {
                     Label("Open library", systemImage: "square.grid.2x2")
                 }
@@ -310,7 +329,7 @@ struct GameDiscoverView: View {
                 }
             }
             guard let root = SteamLibrary.detectInstall(bottleURL: bottle.url) else { return }
-            pendingAppID = appID
+            rememberPending(appID)
             bottleVM.steamSetupStatus = "Sign in to Steam and follow its install prompt."
             let result = try await Wine.runProgram(
                 at: root.appending(path: "steam.exe"), args: ["steam://install/\(appID)"], bottle: bottle,
