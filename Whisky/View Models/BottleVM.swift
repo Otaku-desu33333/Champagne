@@ -87,6 +87,7 @@ final class BottleVM: ObservableObject {
     @Published var bottleCreationAlert: BottleCreationAlert?
     /// Serializes Steam setup across navigation and multiple windows.
     @Published var steamSetupToken: UUID?
+    var latestSteamRequest: UUID?
     @Published var steamSetupStatus: String?
     @Published var steamSetupError: String?
 

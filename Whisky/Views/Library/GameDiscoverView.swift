@@ -74,6 +74,7 @@ struct GameDiscoverView: View {
             while pendingAppID > 0 && !Task.isCancelled {
                 if let url = UserDefaults.standard.url(forKey: "champagne.managedSteamBottle") {
                     installProgress = SteamLibrary.installProgress(appID: pendingAppID, bottleURL: url)
+                    if installProgress?.installed == true { bottleVM.steamSetupStatus = nil }
                 }
                 try? await Task.sleep(for: .seconds(5))
             }
@@ -119,9 +120,19 @@ struct GameDiscoverView: View {
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 } else {
-                    Text("\(title): waiting for Steam to start the install.")
-                        .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("\(title): waiting for Steam to start the install.")
+                        Text("Sign in and accept any purchase or install prompts in Steam. If nothing happens, select Install with Steam again.")
+                    }
+                    .foregroundStyle(.secondary)
                 }
+                Button("Dismiss status") {
+                    pendingAppID = 0
+                    bottleVM.steamSetupStatus = nil
+                    bottleVM.latestSteamRequest = nil
+                }
+                .buttonStyle(.link)
+                .help("This only hides the status; Steam continues any active download.")
             }
         }
         .frame(maxWidth: 760, alignment: .leading)
@@ -205,6 +216,7 @@ struct GameDiscoverView: View {
         guard !installing, bottleVM.steamSetupToken == nil else { return }
         let token = UUID()
         installing = true
+        bottleVM.latestSteamRequest = token
         bottleVM.steamSetupToken = token
         defer {
             if bottleVM.steamSetupToken == token {
@@ -278,7 +290,7 @@ struct GameDiscoverView: View {
         } catch {
             // A later request may already be in progress after this launch
             // started. Do not overwrite its status with an older result.
-            if bottleVM.steamSetupToken == nil || bottleVM.steamSetupToken == token {
+            if bottleVM.latestSteamRequest == token {
                 bottleVM.steamSetupStatus = nil
                 bottleVM.steamSetupError = error.localizedDescription
             }
