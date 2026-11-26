@@ -84,12 +84,21 @@ struct GameDiscoverView: View {
         }
         .task(id: pendingAppID) {
             installProgress = nil
-            while pendingAppID > 0 && !Task.isCancelled {
+            let appID = pendingAppID
+            while appID > 0 && !Task.isCancelled {
                 if let url = bottleVM.managedSteamBottleURL {
-                    installProgress = SteamLibrary.installProgress(appID: pendingAppID, bottleURL: url)
-                    if installProgress?.installed == true { bottleVM.steamSetupStatus = nil }
+                    let progress = await Task.detached {
+                        SteamLibrary.installProgress(appID: appID, bottleURL: url)
+                    }.value
+                    guard !Task.isCancelled, pendingAppID == appID else { return }
+                    installProgress = progress
+                    if progress?.installed == true && bottleVM.steamSetupToken == nil {
+                        bottleVM.steamSetupStatus = nil
+                    }
+                } else {
+                    installProgress = nil
                 }
-                try? await Task.sleep(for: .seconds(5))
+                do { try await Task.sleep(for: .seconds(5)) } catch { return }
             }
         }
         .alert("Steam setup", isPresented: Binding(
