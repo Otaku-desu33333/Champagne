@@ -251,7 +251,7 @@ struct GameDiscoverView: View {
                 let installer = directory.appendingPathComponent("SteamSetup.exe")
                 try FileManager.default.moveItem(at: download, to: installer)
                 bottleVM.steamSetupStatus = "Complete Steam setup in the installer window."
-                let result = try await Wine.runProgram(at: installer, bottle: bottle)
+                let result = try await Wine.runProgram(at: installer, bottle: bottle, waitForExit: true)
                 guard result.exitCode == 0, SteamLibrary.detectInstall(bottleURL: bottle.url) != nil else {
                     throw NSError(domain: "ChampagneSteamSetup", code: 1, userInfo: [
                         NSLocalizedDescriptionKey: "Steam setup did not complete. Please try again."

@@ -291,6 +291,23 @@ public class Wine {
             self.environment = environment
             self.arguments = arguments
         }
+
+        func waitingForExit() throws -> PreparedLaunch {
+            guard arguments.starts(with: ["start", "/unix"]) else {
+                throw WaitingLaunchError.unsupportedDesktop
+            }
+            var waitingArguments = arguments
+            waitingArguments.insert("/wait", at: 1)
+            return PreparedLaunch(environment: environment, arguments: waitingArguments, wineBinary: wineBinary)
+        }
+    }
+
+    enum WaitingLaunchError: LocalizedError {
+        case unsupportedDesktop
+
+        var errorDescription: String? {
+            "The installer cannot be run while a virtual desktop is enabled."
+        }
     }
 
     private struct LaunchBackendInput {
@@ -368,10 +385,11 @@ public class Wine {
         overridesApplyToDescendants: Bool = false,
         descendantExecutables: [String] = [],
         descendantLaunchers: [LauncherType] = [],
+        waitForExit: Bool = false,
         onOutput: (@MainActor (ProcessOutput) -> Void)? = nil
     ) async throws -> ProgramRunResult {
         try await runProgram(at: url, bottle: bottle, programSettings: programSettings, onOutput: onOutput) {
-            try await prepareProgramLaunch(
+            let launch = try await prepareProgramLaunch(
                 at: url, args: args, bottle: bottle, environment: environment,
                 programOverrides: programOverrides, programSettings: programSettings,
                 gameProfileEnvironment: gameProfileEnvironment,
@@ -379,6 +397,7 @@ public class Wine {
                 descendantExecutables: descendantExecutables,
                 descendantLaunchers: descendantLaunchers
             )
+            return waitForExit ? try launch.waitingForExit() : launch
         }
     }
 

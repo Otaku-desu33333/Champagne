@@ -23,6 +23,16 @@ import Testing
 @Suite("Wine runtime launch")
 @MainActor
 final class WineRuntimeLaunchTests {
+    @Test("Installer wait is passed to Wine start and preserves the executable arguments")
+    func installerWaitArguments() throws {
+        let launch = Wine.PreparedLaunch(environment: ["WINEPREFIX": "/tmp/prefix"],
+                                         arguments: ["start", "/unix", "/tmp/SteamSetup.exe", "arg"])
+        let waiting = try launch.waitingForExit()
+        #expect(waiting.arguments == ["start", "/wait", "/unix", "/tmp/SteamSetup.exe", "arg"])
+        #expect(waiting.environment == launch.environment)
+        let desktop = Wine.PreparedLaunch(environment: [:], arguments: ["explorer", "/desktop=x"])
+        #expect(throws: Wine.WaitingLaunchError.self) { try desktop.waitingForExit() }
+    }
     private let tempRoot: URL
 
     init() throws {
