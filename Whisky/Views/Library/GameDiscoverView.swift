@@ -129,18 +129,18 @@ struct GameDiscoverView: View {
                 let title = Self.catalog.first { game in
                     game.installSources.contains(.steam(appID: pendingAppID))
                 }?.title ?? String(pendingAppID)
-                if let progress = installProgress, progress.installed {
-                    Text("\(title) is installed. Find it in your library.")
-                        .foregroundStyle(.secondary)
-                } else if let progress = installProgress,
+                if let progress = installProgress,
                           let downloaded = progress.downloadedBytes,
-                          let total = progress.totalBytes, total > 0, downloaded <= total {
+                          let total = progress.totalBytes, total > 0, downloaded < total {
                     VStack(alignment: .leading) {
                         Text("\(title): Steam download")
                         ProgressView(value: Double(downloaded), total: Double(total))
                         Text("\(ByteCountFormatter.string(fromByteCount: Int64(clamping: downloaded), countStyle: .file)) / \(ByteCountFormatter.string(fromByteCount: Int64(clamping: total), countStyle: .file))")
                             .font(.caption).foregroundStyle(.secondary)
                     }
+                } else if let progress = installProgress, progress.installed {
+                    Text("\(title) is installed. Find it in your library.")
+                        .foregroundStyle(.secondary)
                 } else {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("\(title): waiting for Steam to start the install.")
