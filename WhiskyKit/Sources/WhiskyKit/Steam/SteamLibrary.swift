@@ -68,6 +68,80 @@ public enum SteamLibrary {
         return pending
     }
 
+    /// Stable, path-safe directory name for a game downloaded directly by Champagne.
+    public static func directInstallDirectoryName(appID: Int, title: String) -> String {
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: " _-."))
+        let filtered = String(title.unicodeScalars.filter { allowed.contains($0) })
+        let readable = String(filtered.trimmingCharacters(in: .whitespacesAndNewlines).prefix(72))
+        let stem = readable.isEmpty ? "Game" : readable
+        return "\(stem) (Champagne \(appID))"
+    }
+
+    /// The final Steam library location for a direct Champagne download.
+    public static func directInstallURL(appID: Int, title: String, bottleURL: URL) -> URL? {
+        guard appID > 0, let steamRoot = detectInstall(bottleURL: bottleURL) else { return nil }
+        let directoryName = directInstallDirectoryName(appID: appID, title: title)
+        guard isSafePathComponent(directoryName) else { return nil }
+        return steamRoot.appending(path: "steamapps/common").appending(path: directoryName)
+    }
+
+    /// Registers a completed SteamCMD download in the managed Windows Steam library.
+    ///
+    /// SteamCMD writes its own install record outside the Wine prefix. Reuse that full
+    /// record when available so Steam retains the downloaded depot/build details; older
+    /// or changed SteamCMD layouts fall back to a minimal installed manifest for
+    /// Champagne's library scanner.
+    public static func registerDirectDownload(
+        appID: Int,
+        title: String,
+        installURL: URL,
+        bottleURL: URL,
+        steamCMDManifestURL: URL? = nil
+    ) throws {
+        guard appID > 0,
+              let steamRoot = detectInstall(bottleURL: bottleURL),
+              let expectedURL = directInstallURL(appID: appID, title: title, bottleURL: bottleURL),
+              expectedURL.standardizedFileURL == installURL.standardizedFileURL,
+              isSafePathComponent(expectedURL.lastPathComponent)
+        else { throw SteamDirectInstallError.invalidLocation }
+
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: installURL.path(percentEncoded: false), isDirectory: &isDirectory),
+              isDirectory.boolValue,
+              directoryContainsFiles(installURL) else {
+            throw SteamDirectInstallError.downloadMissing
+        }
+
+        let appStateText: String
+        if let steamCMDManifestURL,
+           let manifest = SteamAppManifest(contentsOf: steamCMDManifestURL),
+           manifest.appId == appID,
+           manifest.isFullyInstalled,
+           let source = try? String(contentsOf: steamCMDManifestURL, encoding: .utf8) {
+            let rewritten = replacingManifestValue(
+                "installdir", with: installURL.lastPathComponent, in: source
+            ).flatMap { replacingManifestValue("name", with: title, in: $0) }
+            if let rewritten,
+               let verified = SteamAppManifest(text: rewritten),
+               verified.appId == appID,
+               verified.name == title,
+               verified.installDir == installURL.lastPathComponent,
+               verified.isFullyInstalled {
+                appStateText = rewritten
+            } else {
+                appStateText = minimalInstalledManifest(appID: appID, title: title, installURL: installURL)
+            }
+        } else {
+            appStateText = minimalInstalledManifest(appID: appID, title: title, installURL: installURL)
+        }
+
+        let destination = steamRoot.appending(path: "steamapps/appmanifest_\(appID).acf")
+        try FileManager.default.createDirectory(
+            at: destination.deletingLastPathComponent(), withIntermediateDirectories: true
+        )
+        try Data(appStateText.utf8).write(to: destination, options: .atomic)
+    }
+
     /// Candidate Steam install locations under `drive_c`.
     private static let installCandidates = [
         "Program Files (x86)/Steam",
@@ -153,6 +227,74 @@ public enum SteamLibrary {
             }
             return "\(steamapps.path(percentEncoded: false))@\(modified?.timeIntervalSince1970 ?? 0):\(commonModified?.timeIntervalSince1970 ?? 0)|\(manifests.joined(separator: "|"))"
         }
+    }
+
+    private static func directoryContainsFiles(_ url: URL) -> Bool {
+        FileManager.default.enumerator(
+            at: url,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        )?.contains { item in
+            guard let fileURL = item as? URL,
+                  let values = try? fileURL.resourceValues(forKeys: [.isRegularFileKey]) else { return false }
+            return values.isRegularFile == true
+        } ?? false
+    }
+
+    private static func minimalInstalledManifest(appID: Int, title: String, installURL: URL) -> String {
+        let size = directorySize(at: installURL)
+        let escapedTitle = title.replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        let now = Int(Date().timeIntervalSince1970)
+        return """
+        "AppState"
+        {
+        \t"appid"\t\t"\(appID)"
+        \t"Universe"\t\t"1"
+        \t"name"\t\t"\(escapedTitle)"
+        \t"StateFlags"\t\t"4"
+        \t"installdir"\t\t"\(installURL.lastPathComponent)"
+        \t"LastUpdated"\t\t"\(now)"
+        \t"UpdateResult"\t\t"0"
+        \t"SizeOnDisk"\t\t"\(size)"
+        \t"BytesToDownload"\t\t"0"
+        \t"BytesDownloaded"\t\t"\(size)"
+        \t"BytesToStage"\t\t"0"
+        \t"BytesStaged"\t\t"\(size)"
+        \t"buildid"\t\t"0"
+        \t"UserConfig"\n\t{\n\t}\n\t"MountedConfig"\n\t{\n\t}
+        }
+        """
+    }
+
+    private static func replacingManifestValue(_ key: String, with value: String, in text: String) -> String? {
+        let escapedValue = value.replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        var lines = text.components(separatedBy: .newlines)
+        guard let index = lines.firstIndex(where: { line in
+            line.trimmingCharacters(in: .whitespaces).lowercased().hasPrefix("\"\(key.lowercased())\"")
+        }) else { return nil }
+        let indentation = String(lines[index].prefix { $0 == " " || $0 == "\t" })
+        lines[index] = "\(indentation)\"\(key)\"\t\t\"\(escapedValue)\""
+        return lines.joined(separator: "\n")
+    }
+
+    private static func directorySize(at url: URL) -> UInt64 {
+        let files = FileManager.default.enumerator(
+            at: url,
+            includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey],
+            options: [.skipsHiddenFiles]
+        )
+        var size: UInt64 = 0
+        files?.forEach { item in
+            guard let fileURL = item as? URL,
+                  let values = try? fileURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey]),
+                  values.isRegularFile == true,
+                  let fileSize = values.fileSize, fileSize > 0 else { return }
+            let (sum, overflow) = size.addingReportingOverflow(UInt64(fileSize))
+            size = overflow ? UInt64.max : sum
+        }
+        return size
     }
 
     private static let cache = EnumerationCache()
@@ -337,6 +479,20 @@ public enum SteamLibrary {
                     .localizedCaseInsensitiveCompare(rhs.url.lastPathComponent) == .orderedAscending
             }?
             .overrides
+    }
+}
+
+private enum SteamDirectInstallError: LocalizedError {
+    case invalidLocation
+    case downloadMissing
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidLocation:
+            "Champagne could not register the downloaded game in its library."
+        case .downloadMissing:
+            "SteamCMD finished, but Champagne could not find the downloaded game files."
+        }
     }
 }
 

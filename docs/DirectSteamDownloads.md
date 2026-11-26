@@ -1,35 +1,47 @@
-# Steam downloads from Champagne
+# Direct Steam downloads from Champagne
 
-Champagne owns discovery and the install experience. The official Steam client
-remains responsible for sign-in, entitlement checks, and game content. On the
-first install, Champagne prepares Steam inside its managed game environment,
-sends the selected App ID to Steam, and reads Steam's install manifest for
-progress and completion. This keeps one Steam account session for both
-downloading and launching.
+Champagne owns the discovery and install flow. Selecting a Steam game prepares
+the managed game environment, installs the Windows Steam client for launch
+compatibility, then starts a Windows depot download through Valve's macOS
+SteamCMD. Champagne presents the account, password, and verification prompts,
+shows download progress, and registers the completed files in its game library.
+The password and verification response go to SteamCMD through standard input;
+neither is placed in the process arguments or Champagne's logs. SteamCMD's
+local account data is directed to a private Champagne support folder with
+owner-only permissions.
 
-## Direct downloader investigation
+## Known launch limitation
 
-[DepotDownloader](https://github.com/SteamRE/DepotDownloader) can authenticate
-with Steam, select Windows content on macOS, and download depots. It is a
-third-party command-line application, not an official Valve integration. It
-creates its own Steam session, separate from the Steam client Champagne needs
-for many games, and its default implementation persists refresh-token data in
-its local settings store. That creates separate sign-in and session handling,
-and the isolated file test did not establish a complete, playable install. It
-is not the selected production path.
+SteamCMD checks the account and downloads the files, but that login is separate
+from the Windows Steam client inside the managed environment. Games that use
+Steam DRM or Steamworks may ask the user to sign in to that client the first
+time they launch. Champagne does not claim that the SteamCMD session also
+authenticates the game client.
 
-The isolated test connected anonymously to Steam and retrieved Windows
-manifests for the public Team Fortress 2 dedicated server (app 232250). A
-filtered download retrieved one 1,740-byte file whose SHA-1 matched the Steam
-manifest. This proves the downloader can fetch public content; it does not
-prove account sign-in, entitlement checks, or game installation.
+Champagne copies SteamCMD's app manifest into the managed Steam library when it
+is available. If SteamCMD changes where it writes that file, Champagne writes a
+minimal local manifest so its library can list the downloaded game. The
+Windows Steam client may then validate or update the files on first launch; an
+end-to-end game install must confirm it does not redownload the full game.
 
-## Remaining verification
+## Support boundary
 
-1. Verify silent Steam client setup, sign-in, ownership checks, and install
-   handoff on the user's Mac.
-2. Complete and verify progress, retry, and restart recovery for selected games.
-3. Integrate installed games with the library and verify launching, including
-   Steam client, DRM, and first-run dependencies.
-4. Add and verify curated free-game publisher flows separately. Preserve
-   existing Whisky and Champagne data throughout testing.
+Valve documents a macOS SteamCMD build in its Steamworks upload guide and
+describes SteamCMD downloads in its standalone game-server support guide. The
+guide does not promise that SteamCMD is a supported replacement for the Steam
+client's regular game-download UI. Champagne uses its documented command-line
+download behavior for Windows depots, but we still need to validate account
+eligibility, manifest handoff, resume behavior, and launch against a small
+owned game on the target Mac.
+
+- [Valve Steamworks: Uploading to Steam](https://partner.steamgames.com/doc/sdk/uploading)
+- [Steam Support: Download, install, and update a standalone server](https://help.steampowered.com/en/faqs/view/5E9C-65C2-C968-98DC)
+
+## Separate investigation
+
+[DepotDownloader](https://github.com/SteamRE/DepotDownloader) can select
+Windows depots and retrieve public content. It is a third-party SteamKit2
+client, not a Valve integration. Its separate session handling and
+GPL-2.0-only license make it a poor fit for bundling in this GPL-3.0-or-later
+app. An earlier isolated test retrieved a small public Team Fortress 2 server
+file and verified its hash; that did not establish a complete game install.

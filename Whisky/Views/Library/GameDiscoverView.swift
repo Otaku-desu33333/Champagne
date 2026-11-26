@@ -30,8 +30,12 @@ struct GameDiscoverView: View {
     @State private var installing = false
     @AppStorage("champagne.pendingSteamAppID") private var legacyPendingAppID = 0
     @AppStorage("champagne.pendingSteamAppIDs") private var pendingIDsText = ""
+    @AppStorage("champagne.steamAccountName") private var steamAccountName = ""
     @State private var installProgress: [Int: SteamLibrary.InstallProgress] = [:]
     @State private var installedSteamIDs: Set<Int> = []
+    @StateObject private var steamCMDSession = SteamCMDDownloadSession.shared
+    @State private var accountPrompt: SteamAccountPrompt?
+    @State private var authenticationPrompt: SteamCMDAuthenticationPrompt?
 
     private var pendingAppIDs: [Int] {
         SteamInstallRequests.decode(pendingIDsText)
@@ -96,6 +100,9 @@ struct GameDiscoverView: View {
                 rememberPending(legacyPendingAppID)
                 legacyPendingAppID = 0
             }
+            if steamCMDSession.didComplete {
+                bottleVM.steamSetupStatus = "Downloaded in Champagne. Steam may ask you to sign in the first time you play."
+            }
         }
         .task(id: pendingIDsText) {
             let ids = pendingAppIDs
@@ -119,12 +126,54 @@ struct GameDiscoverView: View {
             }
         }
         .alert("Steam setup", isPresented: Binding(
-            get: { bottleVM.steamSetupError != nil },
-            set: { if !$0 { bottleVM.steamSetupError = nil } }
+            get: { bottleVM.steamSetupError != nil || steamCMDSession.errorMessage != nil },
+            set: {
+                if !$0 {
+                    bottleVM.steamSetupError = nil
+                    steamCMDSession.dismissError()
+                }
+            }
         )) {
-            Button("OK", role: .cancel) { bottleVM.steamSetupError = nil }
+            Button("OK", role: .cancel) {
+                bottleVM.steamSetupError = nil
+                steamCMDSession.dismissError()
+            }
         } message: {
-            Text(bottleVM.steamSetupError ?? "")
+            Text(bottleVM.steamSetupError ?? steamCMDSession.errorMessage ?? "")
+        }
+        .onChange(of: steamCMDSession.authenticationPrompt) { _, prompt in
+            authenticationPrompt = prompt
+        }
+        .onChange(of: steamCMDSession.didComplete) { _, didComplete in
+            guard didComplete else { return }
+            bottleVM.steamSetupStatus = "Downloaded in Champagne. Steam may ask you to sign in the first time you play."
+        }
+        .onChange(of: steamCMDSession.errorMessage) { _, message in
+            if message != nil { bottleVM.steamSetupStatus = nil }
+        }
+        .sheet(item: $accountPrompt) { prompt in
+            SteamAccountNameSheet(initialValue: steamAccountName) { accountName in
+                steamAccountName = accountName
+                accountPrompt = nil
+                Task { await installSteamGame(prompt.appID, title: prompt.title, accountName: accountName) }
+            }
+        }
+        .sheet(item: $authenticationPrompt) { prompt in
+            SteamCMDAuthenticationSheet(
+                prompt: prompt,
+                submit: { response in
+                    do {
+                        try steamCMDSession.submitAuthenticationResponse(response)
+                        authenticationPrompt = nil
+                    } catch {
+                        bottleVM.steamSetupError = error.localizedDescription
+                    }
+                },
+                cancel: {
+                    steamCMDSession.cancel()
+                    authenticationPrompt = nil
+                }
+            )
         }
     }
 
@@ -136,17 +185,37 @@ struct GameDiscoverView: View {
                 .font(.body)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            if let status = bottleVM.steamSetupStatus {
+            let directStatus = steamCMDSession.didComplete
+                ? "Downloaded in Champagne. Steam may ask you to sign in the first time you play."
+                : steamCMDSession.status
+            if let status = directStatus ?? bottleVM.steamSetupStatus {
                 HStack {
-                    if bottleVM.steamSetupToken != nil { ProgressView().controlSize(.small) }
+                    if bottleVM.steamSetupToken != nil || steamCMDSession.isRunning {
+                        ProgressView().controlSize(.small)
+                    }
                     Text(status).foregroundStyle(.secondary)
+                    if steamCMDSession.canCancel {
+                        Button("Cancel download") { steamCMDSession.cancel() }
+                            .buttonStyle(.link)
+                    }
                 }
             }
             ForEach(pendingAppIDs, id: \.self) { appID in
                 let title = Self.catalog.first { game in
                     game.installSources.contains(.steam(appID: appID))
                 }?.title ?? String(appID)
-                if let progress = installProgress[appID],
+                if steamCMDSession.appID == appID, steamCMDSession.isRunning,
+                   let progress = steamCMDSession.progress, progress.totalBytes > 0 {
+                    VStack(alignment: .leading) {
+                        Text("\(title): Downloading in Champagne")
+                        ProgressView(value: Double(progress.downloadedBytes), total: Double(progress.totalBytes))
+                        Text("\(ByteCountFormatter.string(fromByteCount: Int64(clamping: progress.downloadedBytes), countStyle: .file)) / \(ByteCountFormatter.string(fromByteCount: Int64(clamping: progress.totalBytes), countStyle: .file))")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                } else if steamCMDSession.appID == appID, steamCMDSession.isRunning {
+                    Text("\(title): Preparing a direct Steam download in Champagne…")
+                        .foregroundStyle(.secondary)
+                } else if let progress = installProgress[appID],
                           let downloaded = progress.downloadedBytes,
                           let total = progress.totalBytes, total > 0, downloaded < total {
                     VStack(alignment: .leading) {
@@ -160,8 +229,8 @@ struct GameDiscoverView: View {
                         .foregroundStyle(.secondary)
                 } else {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("\(title): waiting for Steam to verify access and begin the download.")
-                        Text("Sign in if asked. Continue only if Steam offers Install; cancel if it offers Purchase. If no prompt appears, select Install in Champagne again.")
+                        Text("\(title): ready to download through Champagne after Steam checks the account.")
+                        Text("If Steam cannot confirm access, Champagne will stop before adding the game to your library.")
                     }
                     .foregroundStyle(.secondary)
                 }
@@ -220,7 +289,7 @@ struct GameDiscoverView: View {
 
             HStack(spacing: 8) {
                 ForEach(Array(game.installSources.enumerated()), id: \.offset) { item in
-                    installButton(for: item.element)
+                    installButton(for: item.element, title: game.title)
                 }
             }
         }
@@ -234,7 +303,7 @@ struct GameDiscoverView: View {
     }
 
     @ViewBuilder
-    private func installButton(for source: GameInstallSource) -> some View {
+    private func installButton(for source: GameInstallSource, title: String) -> some View {
         switch source {
         case let .steam(appID):
             if installedSteamIDs.contains(appID) || installProgress[appID]?.installed == true {
@@ -244,12 +313,16 @@ struct GameDiscoverView: View {
                 .buttonStyle(.borderedProminent)
             } else {
                 Button {
-                    Task { await installSteamGame(appID) }
+                    if steamAccountName.isEmpty {
+                        accountPrompt = SteamAccountPrompt(appID: appID, title: title)
+                    } else {
+                        Task { await installSteamGame(appID, title: title, accountName: steamAccountName) }
+                    }
                 } label: {
                     Label("Install in Champagne", systemImage: "arrow.down.circle")
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(bottleVM.steamSetupToken != nil)
+                .disabled(bottleVM.steamSetupToken != nil || steamCMDSession.isRunning)
             }
         case let .publisherDownloadPage(url):
             Button {
@@ -262,8 +335,8 @@ struct GameDiscoverView: View {
     }
 
     @MainActor
-    private func installSteamGame(_ appID: Int) async {
-        guard !installing, bottleVM.steamSetupToken == nil else { return }
+    private func installSteamGame(_ appID: Int, title: String, accountName: String) async {
+        guard !installing, bottleVM.steamSetupToken == nil, !steamCMDSession.isRunning else { return }
         let token = UUID()
         installing = true
         bottleVM.latestSteamRequest = token
@@ -346,34 +419,118 @@ struct GameDiscoverView: View {
                 }
                 setupMarker.complete()
             }
-            guard let root = SteamLibrary.detectInstall(bottleURL: bottle.url) else {
+            guard SteamLibrary.detectInstall(bottleURL: bottle.url) != nil else {
                 throw NSError(domain: "ChampagneSteamSetup", code: 4, userInfo: [
                     NSLocalizedDescriptionKey: "Steam could not be found. Please try setup again."
                 ])
             }
             rememberPending(appID)
-            bottleVM.steamSetupStatus = "Sign in to Steam to verify ownership and begin the download."
-            let result = try await Wine.runProgram(
-                at: root.appending(path: "steam.exe"), args: ["steam://install/\(appID)"], bottle: bottle,
-                onOutput: { output in
-                    if output == .started, bottleVM.steamSetupToken == token {
-                        bottleVM.steamSetupToken = nil
-                        installing = false
-                    }
-                }
+            bottleVM.steamSetupStatus = "Starting the direct Champagne download…"
+            try await steamCMDSession.start(
+                appID: appID, title: title, accountName: accountName, bottleURL: bottle.url
             )
-            if result.exitCode != 0 {
-                throw NSError(domain: "ChampagneSteamSetup", code: Int(result.exitCode), userInfo: [
-                    NSLocalizedDescriptionKey: "Steam could not open the install request. Open Steam and install the game from your library."
-                ])
-            }
         } catch {
             // A later request may already be in progress after this launch
             // started. Do not overwrite its status with an older result.
             if bottleVM.latestSteamRequest == token {
+                steamCMDSession.clearFailedStart()
                 bottleVM.steamSetupStatus = nil
                 bottleVM.steamSetupError = error.localizedDescription
             }
         }
+    }
+}
+
+private struct SteamAccountPrompt: Identifiable {
+    let appID: Int
+    let title: String
+    var id: Int { appID }
+}
+
+private struct SteamAccountNameSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var accountName: String
+    let onContinue: (String) -> Void
+
+    init(initialValue: String, onContinue: @escaping (String) -> Void) {
+        _accountName = State(initialValue: initialValue)
+        self.onContinue = onContinue
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Sign in to Steam")
+                .font(.title2.bold())
+            Text("Sign in to Steam so Champagne can check access and download the Windows game files. Your password and verification code are requested securely if Steam needs them.")
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            TextField("Steam account name", text: $accountName)
+                .textFieldStyle(.roundedBorder)
+                .onSubmit(continueIfValid)
+            HStack {
+                Spacer()
+                Button("Cancel", role: .cancel) { dismiss() }
+                Button("Continue", action: continueIfValid)
+                    .buttonStyle(.borderedProminent)
+                    .disabled(accountName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(24)
+        .frame(width: 460)
+    }
+
+    private func continueIfValid() {
+        let value = accountName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { return }
+        onContinue(value)
+    }
+}
+
+private struct SteamCMDAuthenticationSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var response = ""
+    let prompt: SteamCMDAuthenticationPrompt
+    let submit: (String) -> Void
+    let cancel: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(prompt == .password ? "Steam password" : "Steam verification code")
+                .font(.title2.bold())
+            Text(prompt == .password
+                 ? "Your password is sent directly to SteamCMD through a private input stream. Champagne does not save it."
+                 : "Enter the email or authenticator code Steam requested. Champagne does not save the code.")
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Group {
+                if prompt == .password {
+                    SecureField("Password", text: $response)
+                } else {
+                    TextField("Verification code", text: $response)
+                }
+            }
+            .textFieldStyle(.roundedBorder)
+            .onSubmit(submitResponse)
+            HStack {
+                Spacer()
+                Button("Cancel", role: .cancel) {
+                    cancel()
+                    dismiss()
+                }
+                Button("Continue", action: submitResponse)
+                    .buttonStyle(.borderedProminent)
+                    .disabled(response.isEmpty)
+            }
+        }
+        .padding(24)
+        .frame(width: 460)
+        .interactiveDismissDisabled()
+    }
+
+    private func submitResponse() {
+        guard !response.isEmpty else { return }
+        submit(response)
+        response = ""
+        dismiss()
     }
 }
