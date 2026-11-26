@@ -25,6 +25,7 @@ import WhiskyKit
 struct GameDiscoverView: View {
     @Environment(\.openURL) private var openURL
     @EnvironmentObject private var bottleVM: BottleVM
+    var showLibrary: () -> Void
     @State private var searchText = ""
     @State private var installing = false
     @AppStorage("champagne.pendingSteamAppID") private var pendingAppID = 0
@@ -194,13 +195,20 @@ struct GameDiscoverView: View {
     private func installButton(for source: GameInstallSource) -> some View {
         switch source {
         case let .steam(appID):
-            Button {
-                Task { await installSteamGame(appID) }
-            } label: {
-                Label("Install with Steam", systemImage: "arrow.down.circle")
+            if pendingAppID == appID, installProgress?.installed == true {
+                Button(action: showLibrary) {
+                    Label("Open library", systemImage: "square.grid.2x2")
+                }
+                .buttonStyle(.borderedProminent)
+            } else {
+                Button {
+                    Task { await installSteamGame(appID) }
+                } label: {
+                    Label("Install with Steam", systemImage: "arrow.down.circle")
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(bottleVM.steamSetupToken != nil)
             }
-            .buttonStyle(.borderedProminent)
-            .disabled(bottleVM.steamSetupToken != nil)
         case let .publisherDownloadPage(url):
             Button {
                 openURL(url)

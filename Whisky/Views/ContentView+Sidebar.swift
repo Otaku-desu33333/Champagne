@@ -142,7 +142,10 @@ extension ContentView {
                 .disabled(bottle.inFlight)
                 .id(bottle.url)
         } else if selectedPage == .discover {
-            GameDiscoverView()
+            GameDiscoverView {
+                selected = nil
+                selectedPage = .library
+            }
         } else if selectedPage == .library || bottleVM.countActive() > 0 {
             LibraryView(selectedBottle: $selected, refresh: $triggerRefresh) {
                 selected = nil
